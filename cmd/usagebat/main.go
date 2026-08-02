@@ -35,10 +35,12 @@ type app struct {
 	backend tray.Backend
 
 	// mu guards everything derived from the config, which the update loop may
-	// replace when the file changes and click handlers may mutate.
+	// replace when the file changes and click handlers may mutate. It is only
+	// ever held for bookkeeping: collection runs outside it, because a provider
+	// can sit in a subprocess for tens of seconds and menu clicks must not queue
+	// up behind it.
 	mu        sync.Mutex
 	cfg       *config.Config
-	cfgMod    time.Time
 	providers []provider.Provider
 
 	refresh chan struct{}
@@ -77,7 +79,6 @@ func main() {
 		refresh: make(chan struct{}, 1),
 	}
 	a.rebuild()
-	a.stampConfig()
 
 	if *dump != "" {
 		if err := a.dumpOnce(*dump); err != nil {
@@ -106,7 +107,7 @@ func (a *app) dumpOnce(path string) error {
 	}
 	snap.AggregateSources(model.AllWindows, a.cfg.EnabledDisplaySources())
 
-	for _, it := range a.buildMenu(snap, now) {
+	for _, it := range buildMenu(a.cfg, snap, now) {
 		if it.Separator {
 			fmt.Println(strings.Repeat("-", 60))
 			continue
@@ -118,7 +119,7 @@ func (a *app) dumpOnce(path string) error {
 		fmt.Printf("%s%s%s\n", strings.Repeat("    ", it.Indent), mark, it.Title)
 	}
 
-	icon := a.renderIcon(snap)
+	icon := a.renderIcon(a.cfg, snap)
 	if len(icon.Bytes) == 0 {
 		return fmt.Errorf("icon render produced no bytes")
 	}
@@ -141,16 +142,6 @@ func (a *app) rebuild() {
 	}
 }
 
-// stampConfig records the config file's current mtime so our own writes are not
-// mistaken for an external edit on the next update.
-func (a *app) stampConfig() {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if fi, err := os.Stat(a.cfg.FilePath()); err == nil {
-		a.cfgMod = fi.ModTime()
-	}
-}
-
 // currentConfig returns the live config pointer. Its own methods are
 // self-synchronised, so callers outside the update loop use this rather than
 // holding the app lock across file I/O.
@@ -160,15 +151,28 @@ func (a *app) currentConfig() *config.Config {
 	return a.cfg
 }
 
+// mutateConfig applies a change to the live config under the app lock, so a
+// concurrent reload cannot swap the config out from under the click handler and
+// have it persist the pre-reload contents.
+func (a *app) mutateConfig(change func(*config.Config) error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err := change(a.cfg); err != nil {
+		log.Printf("save config: %v", err)
+	}
+}
+
 func (a *app) onReady() {
-	interval := a.refreshInterval()
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(a.refreshInterval())
 	defer ticker.Stop()
 	for {
 		a.update()
-		if next := a.refreshInterval(); next != interval {
-			interval = next
-			ticker.Reset(interval)
+		// Reset after the update, so the interval is measured from the end of a
+		// refresh and a manual one pushes the next scheduled one back.
+		ticker.Reset(a.refreshInterval())
+		select {
+		case <-ticker.C: // a tick that arrived during the update
+		default:
 		}
 		select {
 		case <-ticker.C:
@@ -195,53 +199,55 @@ func (a *app) requestRefresh() {
 
 // update collects from every provider and pushes fresh artwork and menu.
 func (a *app) update() {
+	// Providers keep unsynchronised incremental-read state and are only ever
+	// touched here, so taking them under the lock and collecting outside it is
+	// safe — and it keeps the lock off the subprocesses providers may run.
 	a.mu.Lock()
-	defer a.mu.Unlock()
-
 	a.reloadConfigIfChanged()
+	cfg, providers := a.cfg, a.providers
+	a.mu.Unlock()
 
 	now := time.Now()
 	snap := &model.Snapshot{UpdatedAt: now}
-	for _, p := range a.providers {
+	for _, p := range providers {
 		snap.Sources = append(snap.Sources, p.Collect(now))
 	}
-	snap.AggregateSources(model.AllWindows, a.cfg.EnabledDisplaySources())
+	snap.AggregateSources(model.AllWindows, cfg.EnabledDisplaySources())
 	a.snap.Store(snap)
 
-	a.backend.SetIcon(a.renderIcon(snap))
+	a.backend.SetIcon(a.renderIcon(cfg, snap))
 	a.backend.SetTooltip(tooltip(snap, now))
-	a.backend.SetMenu(a.buildMenu(snap, now))
+	a.backend.SetMenu(buildMenu(cfg, snap, now))
 }
 
 // reloadConfigIfChanged picks up edits made in the config file, so calibrating
-// the Claude Code limits does not need a restart.
+// the Claude Code limits does not need a restart. Saves the app made itself are
+// not edits: the config stamps those as it writes them.
 func (a *app) reloadConfigIfChanged() {
-	path := a.cfg.FilePath()
-	if path == "" {
-		return
-	}
-	fi, err := os.Stat(path)
-	if err != nil || !fi.ModTime().After(a.cfgMod) {
+	if !a.cfg.ExternallyModified() {
 		return
 	}
 	cfg, err := config.Load()
 	if err != nil {
+		// Keep the config we already have rather than dropping the user's
+		// settings over a typo, but accept the file so the next refresh does not
+		// report the same broken edit again.
 		log.Printf("config reload: %v", err)
-		a.cfgMod = fi.ModTime()
+		a.cfg.MarkSeen()
 		return
 	}
 	a.cfg = cfg
-	a.cfgMod = fi.ModTime()
 	a.rebuild()
 }
 
-func (a *app) renderIcon(snap *model.Snapshot) tray.IconData {
-	cells := a.displayCells(snap)
+func (a *app) renderIcon(cfg *config.Config, snap *model.Snapshot) tray.IconData {
+	cells := displayCells(cfg, snap)
 	dark := a.backend.Appearance() == tray.AppearanceDark
+	geometry := cfg.IconGeometry()
 	opts := render.Options{
-		Mode:    a.cfg.DisplayMode,
-		Palette: render.PaletteFrom(a.cfg.Colors, dark),
-		Scale:   a.cfg.Icon.PixelScale,
+		Mode:    cfg.Mode(),
+		Palette: render.PaletteFrom(cfg.Palette(), dark),
+		Scale:   geometry.PixelScale,
 	}
 
 	if a.backend.Layout() == tray.LayoutStrip {
@@ -253,15 +259,15 @@ func (a *app) renderIcon(snap *model.Snapshot) tray.IconData {
 		}
 		return tray.IconData{
 			Bytes:    data,
-			WidthPt:  float64(icon.DotsW) * a.cfg.Icon.DotSize,
-			HeightPt: float64(icon.DotsH) * a.cfg.Icon.DotSize,
+			WidthPt:  float64(icon.DotsW) * geometry.DotSize,
+			HeightPt: float64(icon.DotsH) * geometry.DotSize,
 		}
 	}
 
 	data, err := render.ICO(func(size int) *image.RGBA {
 		o := opts
 		o.Scale = 1
-		base := render.SquareCells(cells, o, a.cfg.Icon.WindowsLayout).Image
+		base := render.SquareCells(cells, o, geometry.WindowsLayout).Image
 		return render.ResizeNearest(base, size)
 	})
 	if err != nil {
@@ -274,15 +280,15 @@ func (a *app) renderIcon(snap *model.Snapshot) tray.IconData {
 // displayCells keeps services separate. In automatic mode each service gets
 // its own shortest real limit, so a Claude 5h limit and a Codex monthly limit
 // can coexist in the same icon.
-func (a *app) displayCells(snap *model.Snapshot) []render.Cell {
+func displayCells(cfg *config.Config, snap *model.Snapshot) []render.Cell {
 	var cells []render.Cell
-	for _, family := range a.cfg.EnabledDisplaySources() {
+	for _, family := range cfg.EnabledDisplaySources() {
 		if !snapshotHasFamily(snap, family) {
 			continue
 		}
 		aggregated := &model.Snapshot{Sources: snap.Sources}
 		aggregated.AggregateSources(model.AllWindows, []string{family})
-		auto, windows := a.cfg.LimitSelection(family)
+		auto, windows := cfg.LimitSelection(family)
 		if auto {
 			windows = nil
 			for _, w := range model.AllWindows {
@@ -324,7 +330,7 @@ const (
 	idLimitPfx  = "limit:"
 )
 
-func (a *app) buildMenu(snap *model.Snapshot, now time.Time) []tray.Item {
+func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time) []tray.Item {
 	var items []tray.Item
 
 	for _, src := range snap.Sources {
@@ -357,19 +363,20 @@ func (a *app) buildMenu(snap *model.Snapshot, now time.Time) []tray.Item {
 	}
 
 	items = append(items, tray.Item{Title: "Icon style", Disabled: true})
+	mode := cfg.Mode()
 	for _, m := range []config.DisplayMode{config.ModeBoth, config.ModeBattery, config.ModePercent} {
 		items = append(items, tray.Item{
 			ID:        idModePfx + string(m),
 			Title:     m.Title(),
 			Indent:    1,
 			Checkable: true,
-			Checked:   a.cfg.DisplayMode == m,
+			Checked:   mode == m,
 		})
 	}
 
 	items = append(items, tray.Item{Title: "Services shown in icon", Disabled: true})
 	selectedSources := map[string]bool{}
-	for _, id := range a.cfg.EnabledDisplaySources() {
+	for _, id := range cfg.EnabledDisplaySources() {
 		selectedSources[id] = true
 	}
 	for _, source := range []struct{ id, title string }{
@@ -396,7 +403,7 @@ func (a *app) buildMenu(snap *model.Snapshot, now time.Time) []tray.Item {
 			continue
 		}
 		items = append(items, tray.Item{Title: source.title, Disabled: true})
-		auto, windows := a.cfg.LimitSelection(source.id)
+		auto, windows := cfg.LimitSelection(source.id)
 		items = append(items, tray.Item{
 			ID:        idLimitPfx + source.id + ":auto",
 			Title:     "Shortest available",
@@ -500,7 +507,8 @@ func tooltip(snap *model.Snapshot, now time.Time) string {
 }
 
 func (a *app) onClick(id string) {
-	cfg := a.currentConfig()
+	// Nothing here takes the app lock before dispatching: quitting must not have
+	// to wait for a refresh that is currently blocked in a provider subprocess.
 	switch {
 	case id == idQuit:
 		a.backend.Quit()
@@ -509,7 +517,7 @@ func (a *app) onClick(id string) {
 		a.requestRefresh()
 		return
 	case id == idConfig:
-		if err := openPath(cfg.FilePath()); err != nil {
+		if err := openPath(a.currentConfig().FilePath()); err != nil {
 			log.Printf("open config: %v", err)
 		}
 		return
@@ -528,9 +536,7 @@ func (a *app) onClick(id string) {
 		if !m.Valid() {
 			return
 		}
-		if err := cfg.SetDisplayMode(m); err != nil {
-			log.Printf("save config: %v", err)
-		}
+		a.mutateConfig(func(c *config.Config) error { return c.SetDisplayMode(m) })
 	case strings.HasPrefix(id, idLimitPfx):
 		parts := strings.Split(strings.TrimPrefix(id, idLimitPfx), ":")
 		if len(parts) != 2 {
@@ -538,29 +544,20 @@ func (a *app) onClick(id string) {
 		}
 		source, choice := parts[0], parts[1]
 		if choice == "auto" {
-			if err := cfg.SetAutoShortest(source, true); err != nil {
-				log.Printf("save config: %v", err)
-			}
+			a.mutateConfig(func(c *config.Config) error { return c.SetAutoShortest(source, true) })
 			break
 		}
 		w, ok := model.ParseWindow(choice)
 		if !ok {
 			return
 		}
-		if err := cfg.ToggleWindow(source, w); err != nil {
-			log.Printf("save config: %v", err)
-		}
+		a.mutateConfig(func(c *config.Config) error { return c.ToggleWindow(source, w) })
 	case strings.HasPrefix(id, idSourcePfx):
 		source := strings.TrimPrefix(id, idSourcePfx)
-		if err := cfg.ToggleDisplaySource(source); err != nil {
-			log.Printf("save config: %v", err)
-		}
+		a.mutateConfig(func(c *config.Config) error { return c.ToggleDisplaySource(source) })
 	default:
 		return
 	}
-	// The write above is ours, so do not let it look like an external edit and
-	// trigger a config reload.
-	a.stampConfig()
 	a.requestRefresh()
 }
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"os"
 	"path/filepath"
@@ -68,12 +69,17 @@ func labelFor(home string) string {
 	return "Codex (" + shortenHome(home) + ")"
 }
 
-// ID implements provider.Provider.
+// ID implements provider.Provider. Two profiles commonly share a directory
+// name (~/work/.codex alongside ~/personal/.codex), and identical IDs would
+// aggregate two accounts' quotas into one battery, so the full path is hashed
+// into the suffix.
 func (p *Provider) ID() string {
 	if p.home == "" {
 		return "codex"
 	}
-	return "codex:" + filepath.Base(p.home)
+	sum := fnv.New32a()
+	_, _ = sum.Write([]byte(p.home))
+	return fmt.Sprintf("codex:%s-%08x", filepath.Base(p.home), sum.Sum32())
 }
 
 // rollout event shapes we care about.
@@ -194,16 +200,19 @@ func (p *Provider) Collect(now time.Time) model.SourceStatus {
 		st.Note = "live via Codex"
 	}
 
-	if rl.PlanType != "" {
+	note := func(s string) {
 		if st.Note != "" {
 			st.Note += " · "
 		}
-		st.Note += "plan: " + rl.PlanType
+		st.Note += s
+	}
+	if rl.PlanType != "" {
+		note("plan: " + rl.PlanType)
 	}
 	if rl.Credits != nil && rl.Credits.Unlimited {
-		st.Note += " · unlimited credits"
+		note("unlimited credits")
 	} else if rl.Credits != nil && rl.Credits.Balance != nil {
-		st.Note += fmt.Sprintf(" · credits %.2f", *rl.Credits.Balance)
+		note(fmt.Sprintf("credits %.2f", *rl.Credits.Balance))
 	}
 
 	// Codex reports cumulative tokens for the session that produced the newest

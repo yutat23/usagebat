@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yutat23/usagebat/internal/config"
@@ -37,7 +38,10 @@ func liveRateLimits(ctx context.Context, bin, home string) (*rateLimits, error) 
 	if err != nil {
 		return nil, err
 	}
-	var stderr bytes.Buffer
+	// exec copies stderr on a goroutine of its own that only stops at Wait, and
+	// the diagnostics below are read while the process is still running, so the
+	// buffer needs a lock of its own.
+	var stderr lockedBuffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
 		return nil, err
@@ -79,6 +83,25 @@ func liveRateLimits(ctx context.Context, bin, home string) (*rateLimits, error) 
 		return nil, appServerError(err, stderr.String())
 	}
 	return parseLiveRateLimits(result)
+}
+
+// lockedBuffer is a bytes.Buffer that tolerates being read while the writer
+// goroutine is still appending to it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 type rpcMessage struct {

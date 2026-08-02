@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/yutat23/usagebat/internal/model"
 )
@@ -54,6 +55,10 @@ type Config struct {
 
 	path string
 	mu   sync.Mutex
+	// stamp is the file's modification time as of the last read or write we did
+	// ourselves. It is guarded by mu together with Save, so a write in progress
+	// can never be observed as somebody else's edit.
+	stamp time.Time
 }
 
 // LimitDisplay independently selects periods for one service.
@@ -237,12 +242,19 @@ func Path() (string, error) {
 // Load reads the config, creating it with defaults when absent. A malformed
 // file is reported but does not stop startup: defaults are used instead.
 func Load() (*Config, error) {
+	cfg := Default()
 	path, err := Path()
 	if err != nil {
-		return nil, err
+		// Callers keep running on a usable config; only persistence is lost.
+		return cfg, err
 	}
-	cfg := Default()
 	cfg.path = path
+
+	// Stamped before the read, so a file rewritten in between is picked up on
+	// the next refresh rather than silently kept at its old contents.
+	if fi, err := os.Stat(path); err == nil {
+		cfg.stamp = fi.ModTime()
+	}
 
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -252,9 +264,14 @@ func Load() (*Config, error) {
 		return cfg, err
 	}
 	if err := json.Unmarshal(data, cfg); err != nil {
-		return cfg, fmt.Errorf("%s: %w", path, err)
+		// Unmarshal applies every field it got through before failing, and the
+		// normalisation below never runs on this path. A half-applied struct can
+		// hold values no part of the app is prepared for — a zero refresh
+		// interval, an unrenderable icon scale — so start over from the defaults.
+		fresh := Default()
+		fresh.path, fresh.stamp = path, cfg.stamp
+		return fresh, fmt.Errorf("%s: %w", path, err)
 	}
-	cfg.path = path
 	migrated := cfg.migrate(data)
 	cfg.normalise()
 	if migrated {
@@ -630,7 +647,65 @@ func (c *Config) Save() error {
 	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, c.path)
+	if err := os.Rename(tmp, c.path); err != nil {
+		return err
+	}
+	// Recorded under the same lock as the write itself: ExternallyModified can
+	// then never catch the file between the rename and the stamp and mistake our
+	// own save for a hand edit.
+	if fi, err := os.Stat(c.path); err == nil {
+		c.stamp = fi.ModTime()
+	}
+	return nil
+}
+
+// ExternallyModified reports whether the file changed since this config last
+// read or wrote it, i.e. whether somebody edited it behind the app's back.
+func (c *Config) ExternallyModified() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.path == "" {
+		return false
+	}
+	fi, err := os.Stat(c.path)
+	if err != nil {
+		return false
+	}
+	return fi.ModTime().After(c.stamp)
+}
+
+// MarkSeen accepts the file's current state without adopting its contents. It
+// is what keeps an unparseable edit from being re-read, and re-reported, on
+// every refresh.
+func (c *Config) MarkSeen() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.path == "" {
+		return
+	}
+	if fi, err := os.Stat(c.path); err == nil {
+		c.stamp = fi.ModTime()
+	}
+}
+
+// Mode, Palette and IconGeometry read the fields the renderer needs under the
+// same lock the menu's click handlers write them with.
+func (c *Config) Mode() DisplayMode {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.DisplayMode
+}
+
+func (c *Config) Palette() Colors {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Colors
+}
+
+func (c *Config) IconGeometry() Icon {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Icon
 }
 
 // FilePath is the resolved config path.

@@ -274,6 +274,9 @@ func expandHome(p string) string {
 func (p *Provider) ingest(dir string, now time.Time) error {
 	cutoff := now.Add(-lookback)
 	var firstErr error
+	// Transcripts get deleted and whole projects get archived; without this the
+	// offset table would keep an entry for every file the app ever saw.
+	live := make(map[string]bool, len(p.offsets))
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // unreadable subtree: skip rather than abort the refresh
@@ -285,6 +288,7 @@ func (p *Provider) ingest(dir string, now time.Time) error {
 		if err != nil {
 			return nil
 		}
+		live[path] = true
 		if info.ModTime().Before(cutoff) {
 			return nil
 		}
@@ -304,6 +308,11 @@ func (p *Provider) ingest(dir string, now time.Time) error {
 	})
 	if err != nil {
 		return err
+	}
+	for path := range p.offsets {
+		if !live[path] {
+			delete(p.offsets, path)
+		}
 	}
 	return firstErr
 }
@@ -470,6 +479,16 @@ func (p *Provider) rollingReset(start time.Time, d time.Duration) time.Time {
 	return time.Time{}
 }
 
+// startOfHour rounds down to the top of the hour the caller is living in.
+// Transcripts stamp UTC and time.Truncate rounds against absolute time, so
+// neither is enough on its own: in a zone offset by a half or quarter hour
+// (Asia/Kolkata, Asia/Kathmandu) both land mid-hour rather than on the hour
+// the block actually opened at.
+func startOfHour(t time.Time) time.Time {
+	local := t.Local()
+	return time.Date(local.Year(), local.Month(), local.Day(), local.Hour(), 0, 0, 0, local.Location())
+}
+
 func startOfWeek(now time.Time) time.Time {
 	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	return day.AddDate(0, 0, -int(day.Weekday()))
@@ -484,7 +503,7 @@ func (p *Provider) activeBlock(now time.Time) (start, resets time.Time) {
 		if blockStart.IsZero() ||
 			e.ts.Sub(blockStart) >= blockDuration ||
 			e.ts.Sub(last) >= blockDuration {
-			blockStart = e.ts.Truncate(time.Hour)
+			blockStart = startOfHour(e.ts)
 		}
 		last = e.ts
 	}

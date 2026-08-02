@@ -267,3 +267,57 @@ func TestModelWeightPrefersLongestMatch(t *testing.T) {
 		t.Errorf("unknown model should weigh 1, got %v", got)
 	}
 }
+
+// The offset table indexes every transcript ever seen. Sessions get deleted and
+// whole projects get archived, so entries that no longer exist have to go or the
+// map grows for the life of the process.
+func TestDeletedTranscriptsLeaveNoOffsetBehind(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	path := writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
+		assistantLine(now.Add(-time.Minute), "m1", "r1", "claude-sonnet-5", 0, 100, 0, 0))
+
+	p := New(testConfig(dir, nil))
+	p.Collect(now)
+	if _, ok := p.offsets[path]; !ok {
+		t.Fatal("the transcript was never recorded")
+	}
+
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	p.Collect(now)
+	if _, ok := p.offsets[path]; ok {
+		t.Fatalf("offset for a deleted transcript survived: %v", p.offsets)
+	}
+}
+
+// Claude's session block opens at the top of the hour of the first message.
+// time.Truncate rounds against absolute time, which lands mid-hour in zones
+// offset by a half or quarter hour.
+func TestBlockStartsOnTheLocalHourInOffsetZones(t *testing.T) {
+	kolkata, err := time.LoadLocation("Asia/Kolkata") // UTC+05:30
+	if err != nil {
+		t.Skipf("tzdata unavailable: %v", err)
+	}
+	// Transcripts stamp UTC; what matters is the zone the user reads the menu in.
+	saved := time.Local
+	time.Local = kolkata
+	t.Cleanup(func() { time.Local = saved })
+
+	dir := t.TempDir()
+	first := time.Date(2026, 8, 2, 14, 20, 0, 0, kolkata)
+	now := first.Add(90 * time.Minute)
+	writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
+		assistantLine(first, "m1", "r1", "claude-sonnet-5", 0, 100, 0, 0))
+
+	p := New(testConfig(dir, nil))
+	p.Collect(now)
+	start, resets := p.activeBlock(now)
+	if got := start.In(kolkata); got.Minute() != 0 || got.Hour() != 14 {
+		t.Errorf("block start = %s, want 14:00 local", got.Format(time.RFC3339))
+	}
+	if want := start.Add(blockDuration); !resets.Equal(want) {
+		t.Errorf("reset = %s, want %s", resets, want)
+	}
+}

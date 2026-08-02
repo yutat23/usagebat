@@ -1,9 +1,12 @@
 package codex
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -249,5 +252,66 @@ func TestParseLiveRateLimitsUsesCodexSnapshot(t *testing.T) {
 	}
 	if rl.Primary.WindowMinutes != 300 || rl.Secondary.WindowMinutes != 10080 {
 		t.Fatalf("live window durations were not mapped: %+v", rl)
+	}
+}
+
+// Splitting Codex by profile usually means several directories with the same
+// name under different parents. Deriving the source ID from the directory name
+// alone collapses them, and two accounts' quotas then aggregate into one
+// battery under whichever name was collected last.
+func TestHomesSharingADirectoryNameStayDistinct(t *testing.T) {
+	root := t.TempDir()
+	work := filepath.Join(root, "work", ".codex")
+	personal := filepath.Join(root, "personal", ".codex")
+	reset := time.Now().Add(time.Hour).Unix()
+	writeRollout(t, work, "2026-07-01", "rollout-work.jsonl",
+		tokenCount("2026-07-01T05:00:00.000Z", jsonBucket(5, 300, reset), ""))
+	writeRollout(t, personal, "2026-08-02", "rollout-personal.jsonl",
+		tokenCount("2026-08-02T05:00:00.000Z", jsonBucket(88, 300, reset), ""))
+
+	ps := Providers(&config.Codex{Enabled: true, Homes: []string{work, personal}})
+	if len(ps) != 2 {
+		t.Fatalf("got %d providers, want one per home", len(ps))
+	}
+	if ps[0].ID() == ps[1].ID() {
+		t.Fatalf("both homes report the same source ID %q", ps[0].ID())
+	}
+	for _, p := range ps {
+		if !strings.HasPrefix(p.ID(), model.SourceCodex+":") {
+			t.Fatalf("ID %q no longer matches the codex family prefix", p.ID())
+		}
+	}
+	// Stable across calls: the ID keys the aggregation, not just the menu.
+	if ps[0].ID() != ps[0].ID() {
+		t.Fatal("IDs must be stable")
+	}
+}
+
+// The app server's stderr is read for diagnostics while the process is still
+// running, and exec keeps a goroutine of its own appending to that buffer until
+// Wait. Run this one under -race.
+func TestAppServerStderrIsReadSafely(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the stub below is a POSIX shell script")
+	}
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "codex-stub")
+	// Chatty on stderr, then exits without ever answering the RPC, which is the
+	// path that reads the buffer.
+	script := "#!/bin/sh\nfor i in 1 2 3 4 5 6 7 8; do\n" +
+		"  echo \"warning line $i padded out to keep the writer busy\" >&2\n" +
+		"done\nexit 3\n"
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rl, err := liveRateLimits(ctx, bin, dir)
+	if err == nil {
+		t.Fatalf("expected an error from a stub that never responds, got %+v", rl)
+	}
+	if !strings.Contains(err.Error(), "warning line") {
+		t.Errorf("stderr was not surfaced in the error: %v", err)
 	}
 }

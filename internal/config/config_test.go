@@ -1,8 +1,10 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/yutat23/usagebat/internal/model"
 )
@@ -115,5 +117,95 @@ func TestToggleDisplaySourcePersistsAndKeepsOne(t *testing.T) {
 	}
 	if got := c.EnabledDisplaySources(); len(got) != 1 || got[0] != model.SourceCodex {
 		t.Fatalf("last source should stay selected, got %v", got)
+	}
+}
+
+// A hand-edited file can be valid JSON with a wrong type somewhere. Unmarshal
+// applies everything it parsed before failing and normalise() never runs on
+// that path, so Load must not hand back the half-applied struct: a zero refresh
+// interval reaches time.NewTicker and takes the whole app down.
+func TestMalformedConfigStillYieldsUsableValues(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+	path, err := Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	broken := `{"version":5,"refreshSeconds":0,"icon":{"pixelScale":0},"displayMode":123}`
+	if err := os.WriteFile(path, []byte(broken), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load()
+	if err == nil {
+		t.Fatal("a malformed config should still be reported")
+	}
+	if cfg == nil {
+		t.Fatal("a malformed config must not leave the caller without one")
+	}
+	if cfg.RefreshSeconds < 5 || cfg.Icon.PixelScale < 1 || !cfg.DisplayMode.Valid() {
+		t.Fatalf("unusable values survived: refresh=%d scale=%d mode=%q",
+			cfg.RefreshSeconds, cfg.Icon.PixelScale, cfg.DisplayMode)
+	}
+}
+
+// The config path is unresolvable when the environment has no home directory.
+// Losing persistence is acceptable; handing the caller a nil config is not.
+func TestLoadWithoutAHomeStillReturnsAConfig(t *testing.T) {
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	cfg, err := Load()
+	if cfg == nil {
+		t.Fatalf("Load returned no config (err=%v)", err)
+	}
+	if cfg.RefreshSeconds < 5 || !cfg.DisplayMode.Valid() {
+		t.Fatalf("fallback config is not usable: %+v", cfg)
+	}
+}
+
+// Saving must not look like somebody editing the file: a menu click that was
+// mistaken for a hand edit reloads the config and rebuilds every provider,
+// throwing away their incremental read state and usage-command throttle.
+func TestOwnSaveIsNotAnExternalEdit(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ {
+		if err := cfg.SetDisplayMode(ModePercent); err != nil {
+			t.Fatal(err)
+		}
+		if cfg.ExternallyModified() {
+			t.Fatalf("our own save was reported as an external edit (iteration %d)", i)
+		}
+	}
+}
+
+func TestHandEditIsDetectedAndAcknowledged(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Filesystem timestamps are coarse; make the edit unambiguously newer.
+	later := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(cfg.FilePath(), later, later); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.ExternallyModified() {
+		t.Fatal("an edit made behind the app's back should be picked up")
+	}
+	cfg.MarkSeen()
+	if cfg.ExternallyModified() {
+		t.Fatal("MarkSeen should stop the same edit being reported again")
 	}
 }

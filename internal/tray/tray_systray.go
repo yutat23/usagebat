@@ -22,12 +22,11 @@ type systrayBackend struct {
 	ids     []string
 	pending []Item
 
-	icon      IconData
-	tooltip   string
-	ready     bool
-	onClick   func(string)
-	onReady   func()
-	poolReady chan struct{}
+	icon    IconData
+	tooltip string
+	ready   bool
+	onClick func(string)
+	onReady func()
 }
 
 var (
@@ -37,7 +36,7 @@ var (
 
 func newBackend() Backend {
 	backendOnce.Do(func() {
-		backend = &systrayBackend{poolReady: make(chan struct{})}
+		backend = &systrayBackend{}
 	})
 	return backend
 }
@@ -60,7 +59,6 @@ func (b *systrayBackend) Run(onReady func(), onClick func(id string)) error {
 		f := b.onReady
 		b.mu.Unlock()
 
-		close(b.poolReady)
 		if len(icon.Bytes) > 0 {
 			systray.SetIcon(icon.Bytes)
 		}
@@ -129,9 +127,9 @@ func (b *systrayBackend) applyMenu(items []Item) {
 
 		mi := b.pool[i]
 		mi.SetTitle(title)
-		if it.Tooltip != "" {
-			mi.SetTooltip(it.Tooltip)
-		}
+		// Set unconditionally: rows are recycled, and a stale tooltip from
+		// whatever this row used to be would otherwise stick to it.
+		mi.SetTooltip(it.Tooltip)
 		if it.Checkable && it.Checked {
 			mi.Check()
 		} else {
