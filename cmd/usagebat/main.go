@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"image"
@@ -15,6 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/yutat23/usagebat/internal/appbundle"
 	"github.com/yutat23/usagebat/internal/autostart"
 	"github.com/yutat23/usagebat/internal/config"
 	"github.com/yutat23/usagebat/internal/i18n"
@@ -45,6 +47,10 @@ type app struct {
 	cfg       *config.Config
 	providers []provider.Provider
 	notifier  *notifyengine.Engine
+	// notificationsUnavailable suppresses repeated attempts during a standalone
+	// macOS launch. Such binaries have no application bundle identity, and
+	// UserNotifications raises an Objective-C exception if called directly.
+	notificationsUnavailable bool
 
 	refresh chan struct{}
 	snap    atomic.Pointer[model.Snapshot]
@@ -58,9 +64,28 @@ func main() {
 		"collect once, print the menu to stdout, write the icon to this path, and exit")
 	foreground := flag.Bool("foreground", false, "run in the foreground and keep the terminal attached")
 	showVersion := flag.Bool("version", false, "print the version and exit")
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: usagebat [options]\n       usagebat install-app\n\n")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("usagebat " + version.String())
+		return
+	}
+	if flag.NArg() > 0 {
+		if flag.NArg() != 1 || flag.Arg(0) != "install-app" {
+			flag.Usage()
+			os.Exit(2)
+		}
+		path, err := appbundle.Install(version.String())
+		if err != nil {
+			log.Fatal(err)
+		}
+		if err := appbundle.Launch(path); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("usagebat installed and launched: " + path)
 		return
 	}
 	if shouldDetach(*foreground, *dump, interactiveTerminal()) {
@@ -224,12 +249,16 @@ func (a *app) update() {
 	a.backend.SetIcon(a.renderIcon(cfg, snap))
 	a.backend.SetTooltip(tooltip(snap, now, p))
 	a.backend.SetMenu(buildMenu(cfg, snap, now, p))
-	if a.notifier == nil {
+	if a.notifier == nil || a.notificationsUnavailable {
 		return
 	}
 	for _, event := range a.notifier.Due(snap, cfg.BankedResetNotifications(), p, now) {
 		if err := a.backend.Notify(tray.Notification{Title: event.Title, Body: event.Body}); err != nil {
 			log.Printf("notification: %v", err)
+			if errors.Is(err, tray.ErrNotificationsUnavailable) {
+				a.notificationsUnavailable = true
+				break
+			}
 			continue
 		}
 		if err := a.notifier.Mark(event, now); err != nil {

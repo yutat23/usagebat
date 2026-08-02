@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.5.1 — 2026-08-03
+
+### Added
+
+- Added `usagebat install-app` to turn a macOS `go install` binary into `~/Applications/usagebat.app` with native notification support
+- Added macOS and Windows screenshots and documented the Windows multi-limit icon layout
+
+### Fixed
+
+- Prevented standalone macOS binaries installed with `go install` from crashing when a banked-reset notification becomes due
+
 ## 0.5.0 — 2026-08-03
 
 ### Added

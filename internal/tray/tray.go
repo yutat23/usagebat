@@ -5,6 +5,13 @@
 // square icon. Layout reports which artwork the caller should produce.
 package tray
 
+import "errors"
+
+// ErrNotificationsUnavailable means the current packaging or platform cannot
+// safely present native notifications. Callers should keep the event unsent so
+// a later launch from a supported package can still deliver it.
+var ErrNotificationsUnavailable = errors.New("native notifications unavailable")
+
 // Layout is the artwork shape a backend can display.
 type Layout int
 

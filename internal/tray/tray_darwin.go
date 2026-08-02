@@ -13,6 +13,9 @@ import "C"
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"unsafe"
 )
@@ -100,13 +103,36 @@ func (b *darwinBackend) SetMenu(items []Item) {
 }
 
 func (b *darwinBackend) Notify(n Notification) error {
+	exe, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrNotificationsUnavailable, err)
+	}
+	if resolved, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = resolved
+	}
+	if !isAppBundleExecutable(exe) {
+		return fmt.Errorf("%w: macOS notifications require usagebat.app", ErrNotificationsUnavailable)
+	}
 	title, body := C.CString(n.Title), C.CString(n.Body)
 	defer C.free(unsafe.Pointer(title))
 	defer C.free(unsafe.Pointer(body))
-	if C.ubNotify(title, body) == 0 {
+	switch C.ubNotify(title, body) {
+	case 1:
+		return nil
+	case -1:
+		return fmt.Errorf("%w: macOS rejected the application bundle", ErrNotificationsUnavailable)
+	default:
 		return fmt.Errorf("notification request was rejected")
 	}
-	return nil
+}
+
+func isAppBundleExecutable(path string) bool {
+	macOSDir := filepath.Dir(filepath.Clean(path))
+	contentsDir := filepath.Dir(macOSDir)
+	appDir := filepath.Dir(contentsDir)
+	return filepath.Base(macOSDir) == "MacOS" &&
+		filepath.Base(contentsDir) == "Contents" &&
+		strings.EqualFold(filepath.Ext(appDir), ".app")
 }
 
 // Quit implements Backend.

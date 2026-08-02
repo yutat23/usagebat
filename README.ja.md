@@ -38,9 +38,9 @@ Windowsのトレイアイコンは正方形に固定されています。既定�
 
 | 環境 | ファイル |
 |---|---|
-| macOS（Apple Silicon / Intel） | `usagebat_0.5.0_macOS_universal.zip` |
-| Windows Intel / AMD | `usagebat_0.5.0_windows_amd64.zip` |
-| Windows on ARM | `usagebat_0.5.0_windows_arm64.zip` |
+| macOS（Apple Silicon / Intel） | `usagebat_0.5.1_macOS_universal.zip` |
+| Windows Intel / AMD | `usagebat_0.5.1_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.5.1_windows_arm64.zip` |
 
 Claude CodeまたはCodexの少なくとも一方がインストールされ、ログイン済みである必要があります。
 
@@ -135,10 +135,18 @@ usagebatには分析サービスがなく、履歴や認証情報を外部へ送
 Go 1.25以降が必要です。
 
 ```sh
-go install github.com/yutat23/usagebat/cmd/usagebat@v0.5.0
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.5.1
 ```
 
 通常のデスクトップ利用には、macOSの`.app`やWindows GUIサブシステム設定を含むRelease版を推奨します。
+
+macOSで`go install`した場合は、次のコマンドで通知に必要なアプリ識別情報とアイコンを持つローカルアプリをインストールできます。
+
+```sh
+usagebat install-app
+```
+
+`~/Applications/usagebat.app`が安全に作成または更新され、そのまま起動します。`go install`で更新した後は、このコマンドをもう一度実行してください。単体バイナリのままでもトレイ表示や利用枠の更新はできますが、ネイティブ通知は利用できません。
 
 ```sh
 make test

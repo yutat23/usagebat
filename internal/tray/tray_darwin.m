@@ -118,23 +118,32 @@ static void ubDeliverNotification(NSString *title, NSString *body) {
 
 int ubNotify(const char *title, const char *body) {
   if (title == NULL || body == NULL) return 0;
-  NSString *titleCopy = [NSString stringWithUTF8String:title];
-  NSString *bodyCopy = [NSString stringWithUTF8String:body];
-  UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
-  [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
-    if (settings.authorizationStatus == UNAuthorizationStatusAuthorized ||
-        settings.authorizationStatus == UNAuthorizationStatusProvisional) {
-      ubDeliverNotification(titleCopy, bodyCopy);
-      return;
+  @try {
+    NSBundle *bundle = [NSBundle mainBundle];
+    if (![bundle.bundleURL.pathExtension.lowercaseString isEqualToString:@"app"] ||
+        bundle.bundleIdentifier.length == 0) {
+      return -1;
     }
-    if (settings.authorizationStatus == UNAuthorizationStatusNotDetermined) {
-      [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
-                            completionHandler:^(BOOL granted, NSError *error) {
-        if (granted) ubDeliverNotification(titleCopy, bodyCopy);
-      }];
-    }
-  }];
-  return 1;
+    NSString *titleCopy = [NSString stringWithUTF8String:title];
+    NSString *bodyCopy = [NSString stringWithUTF8String:body];
+    UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+      if (settings.authorizationStatus == UNAuthorizationStatusAuthorized ||
+          settings.authorizationStatus == UNAuthorizationStatusProvisional) {
+        ubDeliverNotification(titleCopy, bodyCopy);
+        return;
+      }
+      if (settings.authorizationStatus == UNAuthorizationStatusNotDetermined) {
+        [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                              completionHandler:^(BOOL granted, NSError *error) {
+          if (granted) ubDeliverNotification(titleCopy, bodyCopy);
+        }];
+      }
+    }];
+    return 1;
+  } @catch (NSException *exception) {
+    return -1;
+  }
 }
 
 void ubClearMenu(void) {

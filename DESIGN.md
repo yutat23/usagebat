@@ -321,6 +321,7 @@ UI文字列は英語と日本語を持ち、`language` が `auto` の場合はOS
 cmd/usagebat/main.go        エントリポイント（メインスレッド確保、更新ループ、メニュー配線）
 internal/model/                  Snapshot / SourceStatus / WindowStatus など共通型
 internal/config/                 設定の読み書き・既定値・保存先解決
+internal/appbundle/              go install版からmacOS .appを安全に生成
 internal/i18n/                   OS言語判定・英語／日本語カタログ
 internal/notify/                 banked reset期限判定・永続的な重複防止
 internal/provider/               Provider インタフェース
