@@ -4,7 +4,7 @@ package tray
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework Cocoa
+#cgo LDFLAGS: -framework Cocoa -framework UserNotifications
 #include <stdlib.h>
 #include "tray_darwin.h"
 */
@@ -12,6 +12,7 @@ import "C"
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"unsafe"
 )
@@ -96,6 +97,16 @@ func (b *darwinBackend) SetMenu(items []Item) {
 	defer b.mu.Unlock()
 	b.menu = append(b.menu[:0:0], items...)
 	b.menuDirty = true
+}
+
+func (b *darwinBackend) Notify(n Notification) error {
+	title, body := C.CString(n.Title), C.CString(n.Body)
+	defer C.free(unsafe.Pointer(title))
+	defer C.free(unsafe.Pointer(body))
+	if C.ubNotify(title, body) == 0 {
+		return fmt.Errorf("notification request was rejected")
+	}
+	return nil
 }
 
 // Quit implements Backend.

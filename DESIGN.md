@@ -286,10 +286,13 @@ Codex (~/.codex-work)  —  plan: team    ← ホームごとに独立した見�
 
 ### 5.1 言語
 
-**Go**。理由:
+実装言語は **Go**。理由:
 - 単一バイナリで配布でき、常駐アプリとしてランタイム依存がない
 - macOS は cgo で Objective-C を直接叩ける／Windows は syscall のみで完結
 - JSONL の逐次パースが速く、メモリフットプリントが小さい（常駐前提で重要）
+
+UI文字列は英語と日本語を持ち、`language` が `auto` の場合はOSの優先言語を使う。
+設定値、プロトコル名、プロバイダから返る生の診断文は互換性と調査のしやすさを優先して英語のままとする。
 
 ### 5.2 トレイ実装
 
@@ -318,6 +321,8 @@ Codex (~/.codex-work)  —  plan: team    ← ホームごとに独立した見�
 cmd/usagebat/main.go        エントリポイント（メインスレッド確保、更新ループ、メニュー配線）
 internal/model/                  Snapshot / SourceStatus / WindowStatus など共通型
 internal/config/                 設定の読み書き・既定値・保存先解決
+internal/i18n/                   OS言語判定・英語／日本語カタログ
+internal/notify/                 banked reset期限判定・永続的な重複防止
 internal/provider/               Provider インタフェース
 internal/provider/claudecode/    トランスクリプト集計による推定
 internal/provider/codex/         Codexライブ制限 + rollout jsonlフォールバック
@@ -335,11 +340,24 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 
 初回起動時に既定値で自動生成する。
 
+通知済み状態は同じディレクトリの `state.json` に分離して保存する。reset IDそのものは保存せず、
+プロファイル・reset ID・期限から作った短いハッシュと通知済み閾値だけを保持する。
+
+### 5.6 banked reset期限通知
+
+- Codex app-serverの `account/rateLimits/read` が返す所持数を正とし、明細で分かる最短期限を対象にする
+- 既定閾値は168時間（7日）と24時間。reset・閾値ごとに一度だけ通知する
+- 複数閾値を過ぎた状態で起動した場合は最も緊急な通知を1件だけ出し、該当済み閾値をまとめて記録する
+- 通知は案内のみでbanked resetを消費せず、Codexセッションも作成しない
+- macOSはUser Notifications、WindowsはWinRT Toastを直接使い、シェルやPowerShellを起動しない
+- 明細または期限を取得できないフォールバック状態では、誤通知を避けるため通知しない
+
 ## 6. 設定スキーマ（既定値）
 
 ```jsonc
 {
-  "version": 5,
+  "version": 6,
+  "language": "auto",              // auto | en | ja
   "displayMode": "both",           // both | battery | percent
   "displaySources": ["claude-code", "codex"],
   "displayLimits": {
@@ -364,6 +382,12 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
       "period": "#F2F2F2", "textOnFill": "#101010"
     },
     "warnBelow": 50, "criticalBelow": 20
+  },
+  "notifications": {
+    "bankedResetExpiry": {
+      "enabled": true,
+      "thresholdHours": [168, 24]
+    }
   },
   "sources": {
     "claudeCode": {
@@ -403,6 +427,5 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 ## 8. スコープ外（v1 では作らない）
 
 - Linux 対応（`tray.Backend` の実装を足せば入る構造にはする）
-- ログイン時自動起動の登録 UI
-- 通知（残量が閾値を割ったときのアラート）
+- 通常の利用枠残量が閾値を割ったときの通知（banked reset期限通知は対象内）
 - Claude Code に存在しない月次枠の推定

@@ -17,7 +17,9 @@ import (
 
 	"github.com/yutat23/usagebat/internal/autostart"
 	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/i18n"
 	"github.com/yutat23/usagebat/internal/model"
+	notifyengine "github.com/yutat23/usagebat/internal/notify"
 	"github.com/yutat23/usagebat/internal/provider"
 	"github.com/yutat23/usagebat/internal/provider/claudecode"
 	"github.com/yutat23/usagebat/internal/provider/codex"
@@ -42,6 +44,7 @@ type app struct {
 	mu        sync.Mutex
 	cfg       *config.Config
 	providers []provider.Provider
+	notifier  *notifyengine.Engine
 
 	refresh chan struct{}
 	snap    atomic.Pointer[model.Snapshot]
@@ -74,9 +77,10 @@ func main() {
 	}
 
 	a := &app{
-		cfg:     cfg,
-		backend: tray.New(),
-		refresh: make(chan struct{}, 1),
+		cfg:      cfg,
+		backend:  tray.New(),
+		notifier: notifyengine.New(),
+		refresh:  make(chan struct{}, 1),
 	}
 	a.rebuild()
 
@@ -107,7 +111,8 @@ func (a *app) dumpOnce(path string) error {
 	}
 	snap.AggregateSources(model.AllWindows, a.cfg.EnabledDisplaySources())
 
-	for _, it := range buildMenu(a.cfg, snap, now) {
+	p := i18n.New(a.cfg.LanguageSetting())
+	for _, it := range buildMenu(a.cfg, snap, now, p) {
 		if it.Separator {
 			fmt.Println(strings.Repeat("-", 60))
 			continue
@@ -214,10 +219,23 @@ func (a *app) update() {
 	}
 	snap.AggregateSources(model.AllWindows, cfg.EnabledDisplaySources())
 	a.snap.Store(snap)
+	p := i18n.New(cfg.LanguageSetting())
 
 	a.backend.SetIcon(a.renderIcon(cfg, snap))
-	a.backend.SetTooltip(tooltip(snap, now))
-	a.backend.SetMenu(buildMenu(cfg, snap, now))
+	a.backend.SetTooltip(tooltip(snap, now, p))
+	a.backend.SetMenu(buildMenu(cfg, snap, now, p))
+	if a.notifier == nil {
+		return
+	}
+	for _, event := range a.notifier.Due(snap, cfg.BankedResetNotifications(), p, now) {
+		if err := a.backend.Notify(tray.Notification{Title: event.Title, Body: event.Body}); err != nil {
+			log.Printf("notification: %v", err)
+			continue
+		}
+		if err := a.notifier.Mark(event, now); err != nil {
+			log.Printf("notification state: %v", err)
+		}
+	}
 }
 
 // reloadConfigIfChanged picks up edits made in the config file, so calibrating
@@ -321,22 +339,24 @@ func snapshotHasFamily(snap *model.Snapshot, family string) bool {
 
 // Menu item identifiers.
 const (
-	idRefresh   = "refresh"
-	idConfig    = "config"
-	idAutostart = "autostart"
-	idQuit      = "quit"
-	idModePfx   = "mode:"
-	idSourcePfx = "source:"
-	idLimitPfx  = "limit:"
+	idRefresh       = "refresh"
+	idConfig        = "config"
+	idAutostart     = "autostart"
+	idQuit          = "quit"
+	idModePfx       = "mode:"
+	idSourcePfx     = "source:"
+	idLimitPfx      = "limit:"
+	idLanguagePfx   = "language:"
+	idNotifications = "notifications:banked-reset"
 )
 
-func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time) []tray.Item {
+func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time, p i18n.Printer) []tray.Item {
 	var items []tray.Item
 
 	for _, src := range snap.Sources {
 		name := src.Name
 		if src.Note != "" {
-			name += "  —  " + src.Note
+			name += "  —  " + p.TranslateNote(src.Note)
 		}
 		items = append(items, tray.Item{Title: name, Disabled: true})
 
@@ -350,31 +370,38 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time) []tray.I
 			if !ok {
 				continue
 			}
-			items = append(items, tray.Item{Title: windowLine(w, st, now), Disabled: true, Indent: 1})
+			items = append(items, tray.Item{Title: windowLine(w, st, now, p), Disabled: true, Indent: 1})
 			if tok, ok := src.Tokens[w]; ok && tok.Total() > 0 {
 				items = append(items, tray.Item{
-					Title:    tokenLine(tok, src.TokensNote),
+					Title:    tokenLine(tok, src.TokensNote, p),
 					Disabled: true,
 					Indent:   2,
 				})
 			}
 		}
+		if src.RateLimitResets != nil {
+			expires := earliestResetExpiry(src.RateLimitResets.Credits, now)
+			items = append(items, tray.Item{
+				Title:    p.BankedResets(src.RateLimitResets.AvailableCount, expires, now),
+				Disabled: true, Indent: 1,
+			})
+		}
 		items = append(items, tray.Item{Separator: true})
 	}
 
-	items = append(items, tray.Item{Title: "Icon style", Disabled: true})
+	items = append(items, tray.Item{Title: p.T("iconStyle"), Disabled: true})
 	mode := cfg.Mode()
 	for _, m := range []config.DisplayMode{config.ModeBoth, config.ModeBattery, config.ModePercent} {
 		items = append(items, tray.Item{
 			ID:        idModePfx + string(m),
-			Title:     m.Title(),
+			Title:     modeTitle(m, p),
 			Indent:    1,
 			Checkable: true,
 			Checked:   mode == m,
 		})
 	}
 
-	items = append(items, tray.Item{Title: "Services shown in icon", Disabled: true})
+	items = append(items, tray.Item{Title: p.T("servicesShown"), Disabled: true})
 	selectedSources := map[string]bool{}
 	for _, id := range cfg.EnabledDisplaySources() {
 		selectedSources[id] = true
@@ -396,8 +423,8 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time) []tray.I
 	}
 
 	for _, source := range []struct{ id, title string }{
-		{model.SourceClaudeCode, "Claude Code limits"},
-		{model.SourceCodex, "Codex limits"},
+		{model.SourceClaudeCode, p.T("claudeLimits")},
+		{model.SourceCodex, p.T("codexLimits")},
 	} {
 		if !snapshotHasFamily(snap, source.id) {
 			continue
@@ -406,7 +433,7 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time) []tray.I
 		auto, windows := cfg.LimitSelection(source.id)
 		items = append(items, tray.Item{
 			ID:        idLimitPfx + source.id + ":auto",
-			Title:     "Shortest available",
+			Title:     p.T("shortest"),
 			Indent:    1,
 			Checkable: true,
 			Checked:   auto,
@@ -418,7 +445,7 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time) []tray.I
 		for _, w := range model.AllWindows {
 			items = append(items, tray.Item{
 				ID:        idLimitPfx + source.id + ":" + string(w),
-				Title:     w.Title(),
+				Title:     p.WindowTitle(w),
 				Indent:    1,
 				Checkable: true,
 				Checked:   !auto && enabled[w],
@@ -426,10 +453,28 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time) []tray.I
 		}
 	}
 
+	if snapshotHasFamily(snap, model.SourceCodex) {
+		ns := cfg.BankedResetNotifications()
+		items = append(items, tray.Item{
+			ID: idNotifications, Title: p.T("notifications"), Checkable: true, Checked: ns.Enabled,
+		})
+	}
+
+	items = append(items, tray.Item{Title: p.T("language"), Disabled: true})
+	language := cfg.LanguageSetting()
+	for _, choice := range []struct{ id, title string }{
+		{i18n.Auto, p.T("systemDefault")}, {i18n.EN, p.T("english")}, {i18n.JA, p.T("japanese")},
+	} {
+		items = append(items, tray.Item{
+			ID: idLanguagePfx + choice.id, Title: choice.title, Indent: 1,
+			Checkable: true, Checked: language == choice.id,
+		})
+	}
+
 	if autostart.Supported() {
 		enabled, err := autostart.Enabled()
 		item := tray.Item{
-			ID: idAutostart, Title: "Launch at startup", Checkable: true, Checked: enabled,
+			ID: idAutostart, Title: p.T("launchAtStartup"), Checkable: true, Checked: enabled,
 		}
 		if err != nil {
 			item.Tooltip = err.Error()
@@ -439,49 +484,85 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time) []tray.I
 
 	items = append(items,
 		tray.Item{Separator: true},
-		tray.Item{ID: idRefresh, Title: "Refresh now"},
-		tray.Item{ID: idConfig, Title: "Open config file…"},
-		tray.Item{ID: idQuit, Title: "Quit"},
+		tray.Item{ID: idRefresh, Title: p.T("refreshNow")},
+		tray.Item{ID: idConfig, Title: p.T("openConfig")},
+		tray.Item{ID: idQuit, Title: p.T("quit")},
 	)
 	return items
 }
 
-func windowLine(w model.Window, st model.WindowStatus, now time.Time) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%-8s ", w.Title())
-	if st.Known {
-		fmt.Fprintf(&b, "%3.0f%% left", st.RemainingPercent())
-	} else {
-		b.WriteString("  ?  left")
+func modeTitle(mode config.DisplayMode, p i18n.Printer) string {
+	switch mode {
+	case config.ModeBoth:
+		return p.T("modeBoth")
+	case config.ModeBattery:
+		return p.T("modeBattery")
+	case config.ModePercent:
+		return p.T("modePercent")
 	}
-	if r := model.FormatReset(st.ResetsAt, now); r != "" {
+	return string(mode)
+}
+
+func earliestResetExpiry(credits []model.RateLimitResetCredit, now time.Time) time.Time {
+	var earliest time.Time
+	for _, credit := range credits {
+		if credit.Status != "" && credit.Status != "available" {
+			continue
+		}
+		if !credit.ExpiresAt.After(now) {
+			continue
+		}
+		if earliest.IsZero() || credit.ExpiresAt.Before(earliest) {
+			earliest = credit.ExpiresAt
+		}
+	}
+	return earliest
+}
+
+func windowLine(w model.Window, st model.WindowStatus, now time.Time, p i18n.Printer) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "%-8s ", p.WindowTitle(w))
+	if st.Known {
+		if p.Japanese() {
+			fmt.Fprintf(&b, "残り%3.0f%%", st.RemainingPercent())
+		} else {
+			fmt.Fprintf(&b, "%3.0f%% left", st.RemainingPercent())
+		}
+	} else {
+		if p.Japanese() {
+			b.WriteString("残り ?")
+		} else {
+			b.WriteString("  ?  left")
+		}
+	}
+	if r := p.FormatReset(st.ResetsAt, now); r != "" {
 		b.WriteString("  ·  " + r)
 	}
 	if st.Estimated {
-		b.WriteString("  (est)")
+		b.WriteString("  " + p.T("estimated"))
 	}
 	return b.String()
 }
 
-func tokenLine(t model.Tokens, note string) string {
+func tokenLine(t model.Tokens, note string, p i18n.Printer) string {
 	parts := []string{
-		"in " + model.FormatCount(t.Input),
-		"out " + model.FormatCount(t.Output),
+		p.T("input") + " " + model.FormatCount(t.Input),
+		p.T("output") + " " + model.FormatCount(t.Output),
 	}
 	if c := t.CacheRead + t.CacheCreation; c > 0 {
-		parts = append(parts, "cache "+model.FormatCount(c))
+		parts = append(parts, p.T("cache")+" "+model.FormatCount(c))
 	}
 	if t.Weighted > 0 {
-		parts = append(parts, "weighted "+model.FormatCount(int64(t.Weighted)))
+		parts = append(parts, p.T("weighted")+" "+model.FormatCount(int64(t.Weighted)))
 	}
 	line := strings.Join(parts, " · ")
 	if note != "" {
-		line = note + ": " + line
+		line = p.TranslateNote(note) + ": " + line
 	}
 	return line
 }
 
-func tooltip(snap *model.Snapshot, now time.Time) string {
+func tooltip(snap *model.Snapshot, now time.Time, p i18n.Printer) string {
 	var lines []string
 	for _, src := range snap.Sources {
 		if src.Err != "" {
@@ -499,9 +580,13 @@ func tooltip(snap *model.Snapshot, now time.Time) string {
 		if len(parts) > 0 {
 			lines = append(lines, src.Name+": "+strings.Join(parts, "  "))
 		}
+		if src.RateLimitResets != nil && src.RateLimitResets.AvailableCount > 0 {
+			lines = append(lines, src.Name+": "+p.BankedResets(src.RateLimitResets.AvailableCount,
+				earliestResetExpiry(src.RateLimitResets.Credits, now), now))
+		}
 	}
 	if len(lines) == 0 {
-		return "usagebat: no data"
+		return p.T("noData")
 	}
 	return strings.Join(lines, "\n")
 }
@@ -531,6 +616,11 @@ func (a *app) onClick(id string) {
 		}
 		a.requestRefresh()
 		return
+	case id == idNotifications:
+		a.mutateConfig(func(c *config.Config) error { return c.ToggleBankedResetNotifications() })
+	case strings.HasPrefix(id, idLanguagePfx):
+		language := strings.TrimPrefix(id, idLanguagePfx)
+		a.mutateConfig(func(c *config.Config) error { return c.SetLanguage(language) })
 	case strings.HasPrefix(id, idModePfx):
 		m := config.DisplayMode(strings.TrimPrefix(id, idModePfx))
 		if !m.Valid() {

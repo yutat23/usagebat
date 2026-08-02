@@ -7,6 +7,7 @@ void ubRun(void);
 int ubIsDarkMode(void);
 void ubSetIcon(const void *bytes, int len, double widthPt, double heightPt);
 void ubSetTooltip(const char *s);
+int ubNotify(const char *title, const char *body);
 void ubClearMenu(void);
 void ubAddItem(const char *title, int tag, int enabled, int checked, int indent,
                int isSeparator);

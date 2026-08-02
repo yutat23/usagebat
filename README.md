@@ -1,5 +1,7 @@
 # usagebat
 
+[English](README.md) | [日本語](README.ja.md)
+
 <img src="assets/usagebat.png" width="160" alt="usagebat pixel-art battery bat icon">
 
 usagebat keeps the remaining Claude Code and Codex limits visible as a small pixel-art battery in the macOS menu bar or Windows system tray.
@@ -18,6 +20,9 @@ It shows remaining capacity, not usage: `100%` is full, and the battery drains a
 - Adapts label and battery colors to light and dark system bars
 - Can launch automatically when you sign in
 - Supports multiple Codex profiles without mixing their limits
+- Shows available Codex banked resets and their earliest known expiry
+- Notifies once at 7 days and 24 hours before a banked reset expires
+- Follows the OS language or can be fixed to English or Japanese
 
 ## Download
 
@@ -25,9 +30,9 @@ Download the appropriate file from the latest GitHub release:
 
 | Platform | Release file |
 |---|---|
-| macOS, Apple Silicon or Intel | `usagebat_0.4.0_macOS_universal.zip` |
-| Windows on an Intel or AMD processor | `usagebat_0.4.0_windows_amd64.zip` |
-| Windows on ARM | `usagebat_0.4.0_windows_arm64.zip` |
+| macOS, Apple Silicon or Intel | `usagebat_0.5.0_macOS_universal.zip` |
+| Windows on an Intel or AMD processor | `usagebat_0.5.0_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.5.0_windows_arm64.zip` |
 
 Most Windows computers need the `amd64` build. Use `arm64` only for a Windows on ARM device.
 
@@ -42,7 +47,7 @@ At least one supported CLI must be installed and signed in:
 2. Move `usagebat.app` to `/Applications`.
 3. Open it. usagebat has no Dock icon; look for its battery in the menu bar.
 
-The v0.4.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
+The v0.5.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
 
 ### Windows
 
@@ -50,7 +55,7 @@ The v0.4.0 build is not notarized. If macOS blocks the first launch, Control-cli
 2. Run `usagebat.exe`.
 3. Look for its battery in the system tray. It may initially be inside the hidden-icons menu.
 
-The v0.4.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
+The v0.5.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
 
 ## Using the tray menu
 
@@ -61,8 +66,10 @@ Click the menu-bar item on macOS, or right-click the tray icon on Windows. The m
 - include Claude Code, Codex, or both;
 - choose a different period for each service;
 - refresh immediately;
-- open the configuration file; and
-- enable **Launch at startup**.
+- open the configuration file;
+- enable **Launch at startup**;
+- enable banked-reset expiration notifications; and
+- switch between system-default, English, and Japanese UI text.
 
 By default, usagebat selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CXMO` is a Codex monthly limit.
 
@@ -77,6 +84,8 @@ If a service has multiple configured accounts, the icon uses the account with th
 usagebat asks the Codex app server for the same live account limit snapshot used by Codex `/status`. These percentages and reset times are reported by the service and are not estimated.
 
 If the installed Codex version cannot provide a live snapshot, usagebat can fall back to the newest rate-limit record in `$CODEX_HOME/sessions`. An expired record is never shown as a current value.
+
+When the Codex app server provides earned rate-limit resets, usagebat shows the authoritative available count and the earliest detailed expiry. Expiration notifications never consume a reset and do not create a Codex session.
 
 ### Claude Code
 
@@ -97,6 +106,7 @@ Common settings include:
 
 | Setting | Purpose |
 |---|---|
+| `language` | `auto`, `en`, or `ja` |
 | `displayMode` | `both`, `battery`, or `percent` |
 | `displaySources` | Services included in the icon |
 | `displayLimits.claude-code` | Claude Code's automatic or explicit periods |
@@ -106,6 +116,7 @@ Common settings include:
 | `icon.windowsLayout` | `stack` or `single` on Windows |
 | `colors.light` / `colors.dark` | Theme-specific battery, service-label, and period-label colors |
 | `colors.warnBelow` / `colors.criticalBelow` | Remaining-percentage warning thresholds |
+| `notifications.bankedResetExpiry` | Enable expiry alerts and set threshold hours |
 | `sources.claudeCode.usageCommand.path` | Explicit Claude executable path, if auto-detection fails |
 | `sources.codex.path` | Explicit Codex executable path, if auto-detection fails |
 | `sources.codex.homes` | Codex profile directories |
@@ -128,6 +139,21 @@ The default theme palettes can be customized independently. Changes are picked u
   "criticalBelow": 20
 }
 ```
+
+### Banked-reset notifications
+
+Notifications are enabled by default at seven days and 24 hours before the earliest known expiry:
+
+```json
+"notifications": {
+  "bankedResetExpiry": {
+    "enabled": true,
+    "thresholdHours": [168, 24]
+  }
+}
+```
+
+Each reset and threshold is notified only once. Deduplication state is stored separately in `state.json`; changing languages does not resend an alert. macOS uses the app bundle icon and native User Notifications. Windows uses a native WinRT toast registered under the `usagebat` AppUserModelID and does not invoke PowerShell.
 
 ### Multiple Codex profiles
 
@@ -152,7 +178,7 @@ The registration points to the app's current location. If you move the app or ex
 
 ## Privacy
 
-usagebat has no analytics service and does not upload your transcripts or credentials. It reads local CLI state and asks the installed Codex CLI for account limit data. Authentication remains managed by Claude Code and Codex.
+usagebat has no analytics service and does not upload your transcripts or credentials. It reads local CLI state and asks the installed Codex CLI for account limit data. Authentication remains managed by Claude Code and Codex. Notification state stores only a shortened hash of the profile, reset ID, and expiry—not the raw reset ID.
 
 ## Troubleshooting
 
@@ -177,7 +203,7 @@ Go 1.25 or newer is required.
 You can install the command directly from the tagged source:
 
 ```sh
-go install github.com/yutat23/usagebat/cmd/usagebat@v0.4.0
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.5.0
 ```
 
 The binary is normally written to `~/go/bin` on macOS or `%USERPROFILE%\go\bin` on Windows. This route is intended for developers:

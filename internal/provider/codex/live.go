@@ -18,6 +18,7 @@ import (
 
 	"github.com/yutat23/usagebat/internal/config"
 	"github.com/yutat23/usagebat/internal/hiddenprocess"
+	"github.com/yutat23/usagebat/internal/model"
 	"github.com/yutat23/usagebat/internal/version"
 )
 
@@ -148,10 +149,24 @@ type liveSnapshot struct {
 	Secondary *liveWindow `json:"secondary"`
 }
 
+type liveResetCredit struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	GrantedAt int64  `json:"grantedAt"`
+	ExpiresAt *int64 `json:"expiresAt"`
+	Title     string `json:"title"`
+}
+
+type liveResetCredits struct {
+	AvailableCount int               `json:"availableCount"`
+	Credits        []liveResetCredit `json:"credits"`
+}
+
 func parseLiveRateLimits(data []byte) (*rateLimits, error) {
 	var response struct {
 		RateLimits          *liveSnapshot            `json:"rateLimits"`
 		RateLimitsByLimitID map[string]*liveSnapshot `json:"rateLimitsByLimitId"`
+		RateLimitResets     *liveResetCredits        `json:"rateLimitResetCredits"`
 	}
 	if err := json.Unmarshal(data, &response); err != nil {
 		return nil, fmt.Errorf("parsing Codex rate limits: %w", err)
@@ -171,10 +186,27 @@ func parseLiveRateLimits(data []byte) (*rateLimits, error) {
 			UsedPercent: w.UsedPercent, WindowMinutes: w.WindowDurationMin, ResetsAt: w.ResetsAt,
 		}
 	}
-	return &rateLimits{
+	rl := &rateLimits{
 		LimitID: snapshot.LimitID, PlanType: snapshot.PlanType,
 		Primary: convert(snapshot.Primary), Secondary: convert(snapshot.Secondary),
-	}, nil
+	}
+	if response.RateLimitResets != nil {
+		resets := &model.RateLimitResetCredits{AvailableCount: response.RateLimitResets.AvailableCount}
+		for _, credit := range response.RateLimitResets.Credits {
+			item := model.RateLimitResetCredit{
+				ID: credit.ID, Status: credit.Status, Title: credit.Title,
+			}
+			if credit.GrantedAt > 0 {
+				item.GrantedAt = time.Unix(credit.GrantedAt, 0)
+			}
+			if credit.ExpiresAt != nil && *credit.ExpiresAt > 0 {
+				item.ExpiresAt = time.Unix(*credit.ExpiresAt, 0)
+			}
+			resets.Credits = append(resets.Credits, item)
+		}
+		rl.RateLimitResets = resets
+	}
+	return rl, nil
 }
 
 func appServerError(err error, stderr string) error {

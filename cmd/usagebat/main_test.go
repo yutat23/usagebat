@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/i18n"
 	"github.com/yutat23/usagebat/internal/model"
 	"github.com/yutat23/usagebat/internal/provider"
 	"github.com/yutat23/usagebat/internal/tray"
@@ -49,10 +50,33 @@ func TestDisplayCellsOmitUnavailableService(t *testing.T) {
 	if len(cells) != 1 || cells[0].Service != model.SourceCodex || cells[0].Period != "WK" {
 		t.Fatalf("only installed/present Codex should be drawn: %+v", cells)
 	}
-	menu := buildMenu(cfg, snap, time.Now())
+	menu := buildMenu(cfg, snap, time.Now(), i18n.New("en"))
 	for _, item := range menu {
 		if item.Title == "Claude Code" || item.Title == "Claude Code limits" {
 			t.Fatalf("unavailable Claude should not be offered in menu: %+v", item)
+		}
+	}
+}
+
+func TestJapaneseMenuIncludesBankedResetAndLanguage(t *testing.T) {
+	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.Local)
+	cfg := config.Default()
+	cfg.Language = "ja"
+	snap := &model.Snapshot{Sources: []model.SourceStatus{{
+		ID: model.SourceCodex, Name: "Codex", Windows: map[model.Window]model.WindowStatus{},
+		RateLimitResets: &model.RateLimitResetCredits{AvailableCount: 1, Credits: []model.RateLimitResetCredit{{
+			Status: "available", ExpiresAt: now.Add(10 * 24 * time.Hour),
+		}}},
+	}}}
+	menu := buildMenu(cfg, snap, now, i18n.New("ja"))
+	wants := []string{"Banked reset  1回利用可能 · あと10日に期限切れ", "banked resetの期限切れ通知", "今すぐ更新", "日本語"}
+	for _, want := range wants {
+		found := false
+		for _, item := range menu {
+			found = found || item.Title == want
+		}
+		if !found {
+			t.Errorf("menu missing %q", want)
 		}
 	}
 }
@@ -129,6 +153,7 @@ func (b *stubBackend) Run(func(), func(string)) error { return nil }
 func (b *stubBackend) SetIcon(tray.IconData)          {}
 func (b *stubBackend) SetTooltip(string)              {}
 func (b *stubBackend) SetMenu([]tray.Item)            {}
+func (b *stubBackend) Notify(tray.Notification) error { return nil }
 func (b *stubBackend) Quit() {
 	b.mu.Lock()
 	defer b.mu.Unlock()

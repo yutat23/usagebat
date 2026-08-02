@@ -108,6 +108,8 @@ func (b *systrayBackend) SetMenu(items []Item) {
 	}
 }
 
+func (b *systrayBackend) Notify(n Notification) error { return notifyNative(n) }
+
 // separatorTitle stands in for a real separator: systray rows are permanent, so
 // a drawn rule that can be re-titled is the only form that survives a rebuild.
 const separatorTitle = "──────────────"

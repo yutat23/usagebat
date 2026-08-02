@@ -95,6 +95,23 @@ type Tokens struct {
 	Weighted float64
 }
 
+// RateLimitResetCredit is one earned Codex rate-limit reset. Detail rows are
+// optional in the app-server response even when AvailableCount is known.
+type RateLimitResetCredit struct {
+	ID        string
+	Status    string
+	GrantedAt time.Time
+	ExpiresAt time.Time
+	Title     string
+}
+
+// RateLimitResetCredits is the authoritative available count plus any detail
+// rows the service chose to return.
+type RateLimitResetCredits struct {
+	AvailableCount int
+	Credits        []RateLimitResetCredit
+}
+
 // Add accumulates another tally.
 func (t *Tokens) Add(o Tokens) {
 	t.Input += o.Input
@@ -121,7 +138,10 @@ type SourceStatus struct {
 	// per-window total, e.g. Codex reports per session.
 	TokensNote string
 	Note       string // e.g. plan type
-	UpdatedAt  time.Time
+	// RateLimitResets is nil when this source cannot fetch live reset-credit
+	// data. AvailableCount remains authoritative when Credits is incomplete.
+	RateLimitResets *RateLimitResetCredits
+	UpdatedAt       time.Time
 }
 
 // Snapshot is one full refresh across all enabled sources.

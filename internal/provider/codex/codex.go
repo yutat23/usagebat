@@ -111,6 +111,7 @@ type rateLimits struct {
 		Unlimited  bool     `json:"unlimited"`
 		Balance    *float64 `json:"balance"`
 	} `json:"credits"`
+	RateLimitResets *model.RateLimitResetCredits `json:"-"`
 }
 
 type bucket struct {
@@ -213,6 +214,9 @@ func (p *Provider) Collect(now time.Time) model.SourceStatus {
 		note("unlimited credits")
 	} else if rl.Credits != nil && rl.Credits.Balance != nil {
 		note(fmt.Sprintf("credits %.2f", *rl.Credits.Balance))
+	}
+	if liveUsed {
+		st.RateLimitResets = rl.RateLimitResets
 	}
 
 	// Codex reports cumulative tokens for the session that produced the newest

@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+## 0.5.0 — 2026-08-03
+
+### Added
+
+- Added Codex banked-reset counts and earliest-expiry details from the live app-server response
+- Added native expiration notifications at seven days and 24 hours, with persistent deduplication
+- Added system-default, English, and Japanese tray UI and notification text
+- Added a Japanese README
+
+### Changed
+
+- Migrated configuration to version 6 with language and notification settings
+
 ## 0.4.0 — 2026-08-02
 
 ### Added

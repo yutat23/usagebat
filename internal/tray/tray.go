@@ -46,6 +46,11 @@ type IconData struct {
 	WidthPt, HeightPt float64
 }
 
+type Notification struct {
+	Title string
+	Body  string
+}
+
 // Backend is the platform integration.
 //
 // Run blocks until the tray exits. All other methods are safe to call from any
@@ -57,6 +62,7 @@ type Backend interface {
 	SetIcon(IconData)
 	SetTooltip(string)
 	SetMenu([]Item)
+	Notify(Notification) error
 	Quit()
 }
 

@@ -1,4 +1,5 @@
 #import <Cocoa/Cocoa.h>
+#import <UserNotifications/UserNotifications.h>
 
 #include "tray_darwin.h"
 #include "_cgo_export.h"
@@ -100,6 +101,40 @@ void ubSetTooltip(const char *s) {
     return;
   }
   gDelegate.item.button.toolTip = [NSString stringWithUTF8String:s];
+}
+
+static void ubDeliverNotification(NSString *title, NSString *body) {
+  UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
+  content.title = title;
+  content.body = body;
+  content.sound = [UNNotificationSound defaultSound];
+  NSString *identifier = [NSString stringWithFormat:@"usagebat-reset-%@", [[NSUUID UUID] UUIDString]];
+  UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:identifier
+                                                                         content:content
+                                                                         trigger:nil];
+  [[UNUserNotificationCenter currentNotificationCenter]
+      addNotificationRequest:request withCompletionHandler:nil];
+}
+
+int ubNotify(const char *title, const char *body) {
+  if (title == NULL || body == NULL) return 0;
+  NSString *titleCopy = [NSString stringWithUTF8String:title];
+  NSString *bodyCopy = [NSString stringWithUTF8String:body];
+  UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+  [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
+    if (settings.authorizationStatus == UNAuthorizationStatusAuthorized ||
+        settings.authorizationStatus == UNAuthorizationStatusProvisional) {
+      ubDeliverNotification(titleCopy, bodyCopy);
+      return;
+    }
+    if (settings.authorizationStatus == UNAuthorizationStatusNotDetermined) {
+      [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
+                            completionHandler:^(BOOL granted, NSError *error) {
+        if (granted) ubDeliverNotification(titleCopy, bodyCopy);
+      }];
+    }
+  }];
+  return 1;
 }
 
 void ubClearMenu(void) {

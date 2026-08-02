@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -42,16 +43,18 @@ func (m DisplayMode) Title() string {
 // Config is the on-disk configuration.
 type Config struct {
 	Version        int                     `json:"version"`
+	Language       string                  `json:"language"`
 	DisplayMode    DisplayMode             `json:"displayMode"`
 	DisplaySources []string                `json:"displaySources"`
 	DisplayLimits  map[string]LimitDisplay `json:"displayLimits"`
 	// AutoShortest and Windows are retained only to migrate v1-v3 configs.
-	AutoShortest   bool     `json:"autoShortest,omitempty"`
-	Windows        []string `json:"windows,omitempty"`
-	RefreshSeconds int      `json:"refreshSeconds"`
-	Icon           Icon     `json:"icon"`
-	Colors         Colors   `json:"colors"`
-	Sources        Sources  `json:"sources"`
+	AutoShortest   bool          `json:"autoShortest,omitempty"`
+	Windows        []string      `json:"windows,omitempty"`
+	RefreshSeconds int           `json:"refreshSeconds"`
+	Icon           Icon          `json:"icon"`
+	Colors         Colors        `json:"colors"`
+	Notifications  Notifications `json:"notifications"`
+	Sources        Sources       `json:"sources"`
 
 	path string
 	mu   sync.Mutex
@@ -59,6 +62,15 @@ type Config struct {
 	// ourselves. It is guarded by mu together with Save, so a write in progress
 	// can never be observed as somebody else's edit.
 	stamp time.Time
+}
+
+type Notifications struct {
+	BankedResetExpiry BankedResetExpiry `json:"bankedResetExpiry"`
+}
+
+type BankedResetExpiry struct {
+	Enabled        bool  `json:"enabled"`
+	ThresholdHours []int `json:"thresholdHours"`
 }
 
 // LimitDisplay independently selects periods for one service.
@@ -164,7 +176,8 @@ type Codex struct {
 // Default returns the shipped configuration.
 func Default() *Config {
 	return &Config{
-		Version:        5,
+		Version:        6,
+		Language:       "auto",
 		DisplayMode:    ModeBoth,
 		DisplaySources: []string{model.SourceClaudeCode, model.SourceCodex},
 		DisplayLimits: map[string]LimitDisplay{
@@ -191,6 +204,9 @@ func Default() *Config {
 			WarnBelow:     50,
 			CriticalBelow: 20,
 		},
+		Notifications: Notifications{BankedResetExpiry: BankedResetExpiry{
+			Enabled: true, ThresholdHours: []int{168, 24},
+		}},
 		Sources: Sources{
 			ClaudeCode: ClaudeCode{
 				Enabled: true,
@@ -284,7 +300,7 @@ func Load() (*Config, error) {
 
 // migrate updates only values that are known to be an old shipped default.
 // V4 made period selection independent per service. V5 added separate light
-// and dark palettes; customized legacy colours are copied to both appearances.
+// and dark palettes. V6 added localization and reset-expiry notifications.
 func (c *Config) migrate(data []byte) bool {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(data, &raw) != nil {
@@ -294,7 +310,7 @@ func (c *Config) migrate(data []byte) bool {
 	if encoded, ok := raw["version"]; ok {
 		_ = json.Unmarshal(encoded, &version)
 	}
-	if version >= 5 {
+	if version >= 6 {
 		return false
 	}
 	if version < 4 {
@@ -315,8 +331,10 @@ func (c *Config) migrate(data []byte) bool {
 			c.Icon.DotSize = 1.2
 		}
 	}
-	c.migrateLegacyColors()
-	c.Version = 5
+	if version < 5 {
+		c.migrateLegacyColors()
+	}
+	c.Version = 6
 	return true
 }
 
@@ -408,6 +426,9 @@ func sameStrings(a, b []string) bool {
 
 // normalise repairs values that would otherwise break rendering.
 func (c *Config) normalise() {
+	if c.Language != "auto" && c.Language != "en" && c.Language != "ja" {
+		c.Language = "auto"
+	}
 	if !c.DisplayMode.Valid() {
 		c.DisplayMode = ModeBoth
 	}
@@ -449,6 +470,10 @@ func (c *Config) normalise() {
 	if c.Colors.CriticalBelow <= 0 {
 		c.Colors.CriticalBelow = d.Colors.CriticalBelow
 	}
+	c.Notifications.BankedResetExpiry.ThresholdHours = normaliseThresholds(
+		c.Notifications.BankedResetExpiry.ThresholdHours,
+		d.Notifications.BankedResetExpiry.ThresholdHours,
+	)
 	if c.Sources.ClaudeCode.Weights.Output == 0 {
 		c.Sources.ClaudeCode.Weights = d.Sources.ClaudeCode.Weights
 	}
@@ -465,6 +490,23 @@ func (c *Config) normalise() {
 	if c.Sources.Codex.TimeoutSeconds <= 0 {
 		c.Sources.Codex.TimeoutSeconds = d.Sources.Codex.TimeoutSeconds
 	}
+}
+
+func normaliseThresholds(values, defaults []int) []int {
+	seen := map[int]bool{}
+	var out []int
+	for _, value := range values {
+		if value <= 0 || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	if len(out) == 0 {
+		out = append(out, defaults...)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(out)))
+	return out
 }
 
 var allDisplaySources = []string{model.SourceClaudeCode, model.SourceCodex}
@@ -706,6 +748,37 @@ func (c *Config) IconGeometry() Icon {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.Icon
+}
+
+func (c *Config) LanguageSetting() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.Language
+}
+
+func (c *Config) SetLanguage(language string) error {
+	if language != "auto" && language != "en" && language != "ja" {
+		return nil
+	}
+	c.mu.Lock()
+	c.Language = language
+	c.mu.Unlock()
+	return c.Save()
+}
+
+func (c *Config) BankedResetNotifications() BankedResetExpiry {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := c.Notifications.BankedResetExpiry
+	out.ThresholdHours = append([]int(nil), out.ThresholdHours...)
+	return out
+}
+
+func (c *Config) ToggleBankedResetNotifications() error {
+	c.mu.Lock()
+	c.Notifications.BankedResetExpiry.Enabled = !c.Notifications.BankedResetExpiry.Enabled
+	c.mu.Unlock()
+	return c.Save()
 }
 
 // FilePath is the resolved config path.

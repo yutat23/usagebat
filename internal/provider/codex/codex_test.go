@@ -236,12 +236,15 @@ func TestExpiredRolloutIsNotShownAsCurrent(t *testing.T) {
 func TestParseLiveRateLimitsUsesCodexSnapshot(t *testing.T) {
 	reset5h := time.Now().Add(2 * time.Hour).Unix()
 	resetWeek := time.Now().Add(4 * 24 * time.Hour).Unix()
+	expires := time.Now().Add(10 * 24 * time.Hour).Unix()
 	payload := fmt.Sprintf(`{
 		"rateLimits":{"limitId":"other","primary":{"usedPercent":99,"windowDurationMins":300}},
 		"rateLimitsByLimitId":{"codex":{"limitId":"codex","planType":"plus",
 		"primary":{"usedPercent":6,"windowDurationMins":300,"resetsAt":%d},
-		"secondary":{"usedPercent":6,"windowDurationMins":10080,"resetsAt":%d}}}}`,
-		reset5h, resetWeek)
+		"secondary":{"usedPercent":6,"windowDurationMins":10080,"resetsAt":%d}}},
+		"rateLimitResetCredits":{"availableCount":1,"credits":[{"id":"credit-1",
+		"status":"available","grantedAt":1783963938,"expiresAt":%d,"title":"Full reset"}]}}`,
+		reset5h, resetWeek, expires)
 
 	rl, err := parseLiveRateLimits([]byte(payload))
 	if err != nil {
@@ -252,6 +255,12 @@ func TestParseLiveRateLimitsUsesCodexSnapshot(t *testing.T) {
 	}
 	if rl.Primary.WindowMinutes != 300 || rl.Secondary.WindowMinutes != 10080 {
 		t.Fatalf("live window durations were not mapped: %+v", rl)
+	}
+	if rl.RateLimitResets == nil || rl.RateLimitResets.AvailableCount != 1 ||
+		len(rl.RateLimitResets.Credits) != 1 ||
+		rl.RateLimitResets.Credits[0].ID != "credit-1" ||
+		rl.RateLimitResets.Credits[0].ExpiresAt.Unix() != expires {
+		t.Fatalf("reset credits were not mapped: %+v", rl.RateLimitResets)
 	}
 }
 
