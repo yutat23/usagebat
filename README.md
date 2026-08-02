@@ -15,6 +15,7 @@ It shows remaining capacity, not usage: `100%` is full, and the battery drains a
 - Shows reset times and token details in the tray menu
 - Offers battery with percentage, battery-only, and percentage-only styles
 - Changes from green to yellow below 50%, then red below 20%
+- Adapts label and battery colors to light and dark system bars
 - Can launch automatically when you sign in
 - Supports multiple Codex profiles without mixing their limits
 
@@ -24,9 +25,9 @@ Download the appropriate file from the latest GitHub release:
 
 | Platform | Release file |
 |---|---|
-| macOS, Apple Silicon or Intel | `usagebat_0.3.0_macOS_universal.zip` |
-| Windows on an Intel or AMD processor | `usagebat_0.3.0_windows_amd64.zip` |
-| Windows on ARM | `usagebat_0.3.0_windows_arm64.zip` |
+| macOS, Apple Silicon or Intel | `usagebat_0.4.0_macOS_universal.zip` |
+| Windows on an Intel or AMD processor | `usagebat_0.4.0_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.4.0_windows_arm64.zip` |
 
 Most Windows computers need the `amd64` build. Use `arm64` only for a Windows on ARM device.
 
@@ -41,7 +42,7 @@ At least one supported CLI must be installed and signed in:
 2. Move `usagebat.app` to `/Applications`.
 3. Open it. usagebat has no Dock icon; look for its battery in the menu bar.
 
-The v0.3.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
+The v0.4.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
 
 ### Windows
 
@@ -49,7 +50,7 @@ The v0.3.0 build is not notarized. If macOS blocks the first launch, Control-cli
 2. Run `usagebat.exe`.
 3. Look for its battery in the system tray. It may initially be inside the hidden-icons menu.
 
-The v0.3.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
+The v0.4.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
 
 ## Using the tray menu
 
@@ -64,6 +65,8 @@ Click the menu-bar item on macOS, or right-click the tray icon on Windows. The m
 - enable **Launch at startup**.
 
 By default, usagebat selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CXMO` is a Codex monthly limit.
+
+The icon follows the system bar appearance. `CL` uses a Claude terracotta, `CX` uses a Codex teal, and all period suffixes (`5H`, `WK`, and `MO`) share a neutral high-contrast color. Battery status colors also switch between light and dark variants so warning yellow and other details remain legible.
 
 If a service has multiple configured accounts, the icon uses the account with the least remaining capacity for the selected period. The menu still lists every account separately.
 
@@ -101,10 +104,30 @@ Common settings include:
 | `refreshSeconds` | Refresh interval; 60 seconds by default |
 | `icon.dotSize` | macOS menu-bar artwork size |
 | `icon.windowsLayout` | `stack` or `single` on Windows |
-| `colors` | Battery colors and warning thresholds |
+| `colors.light` / `colors.dark` | Theme-specific battery, service-label, and period-label colors |
+| `colors.warnBelow` / `colors.criticalBelow` | Remaining-percentage warning thresholds |
 | `sources.claudeCode.usageCommand.path` | Explicit Claude executable path, if auto-detection fails |
 | `sources.codex.path` | Explicit Codex executable path, if auto-detection fails |
 | `sources.codex.homes` | Codex profile directories |
+
+The default theme palettes can be customized independently. Changes are picked up while usagebat is running:
+
+```json
+"colors": {
+  "light": {
+    "good": "#15803D", "warn": "#A16207", "critical": "#BE123C",
+    "unknown": "#52525B", "claude": "#A94F32", "codex": "#087567",
+    "period": "#25272B", "textOnFill": "#F8FAFC"
+  },
+  "dark": {
+    "good": "#4ADE80", "warn": "#FACC15", "critical": "#FB7185",
+    "unknown": "#A1A1AA", "claude": "#E58A68", "codex": "#52C7B8",
+    "period": "#F2F2F2", "textOnFill": "#101010"
+  },
+  "warnBelow": 50,
+  "criticalBelow": 20
+}
+```
 
 ### Multiple Codex profiles
 
@@ -154,7 +177,7 @@ Go 1.25 or newer is required.
 You can install the command directly from the tagged source:
 
 ```sh
-go install github.com/yutat23/usagebat/cmd/usagebat@v0.3.0
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.4.0
 ```
 
 The binary is normally written to `~/go/bin` on macOS or `%USERPROFILE%\go\bin` on Windows. This route is intended for developers:

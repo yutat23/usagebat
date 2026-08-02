@@ -74,14 +74,31 @@ type Icon struct {
 
 // Colors holds the palette and the thresholds that pick between them.
 type Colors struct {
-	Good          string  `json:"good"`
-	Warn          string  `json:"warn"`
-	Critical      string  `json:"critical"`
-	Unknown       string  `json:"unknown"`
-	Label         string  `json:"label"`
-	TextOnFill    string  `json:"textOnFill"`
-	WarnBelow     float64 `json:"warnBelow"`
-	CriticalBelow float64 `json:"criticalBelow"`
+	Light         ThemeColors `json:"light"`
+	Dark          ThemeColors `json:"dark"`
+	WarnBelow     float64     `json:"warnBelow"`
+	CriticalBelow float64     `json:"criticalBelow"`
+
+	// V1-V4 stored one palette for every system appearance. Keep these fields
+	// readable so customized configs can be migrated to both theme palettes.
+	LegacyGood       string `json:"good,omitempty"`
+	LegacyWarn       string `json:"warn,omitempty"`
+	LegacyCritical   string `json:"critical,omitempty"`
+	LegacyUnknown    string `json:"unknown,omitempty"`
+	LegacyLabel      string `json:"label,omitempty"`
+	LegacyTextOnFill string `json:"textOnFill,omitempty"`
+}
+
+// ThemeColors is one complete palette for a light or dark system bar.
+type ThemeColors struct {
+	Good       string `json:"good"`
+	Warn       string `json:"warn"`
+	Critical   string `json:"critical"`
+	Unknown    string `json:"unknown"`
+	Claude     string `json:"claude"`
+	Codex      string `json:"codex"`
+	Period     string `json:"period"`
+	TextOnFill string `json:"textOnFill"`
 }
 
 // Sources groups the per-provider settings.
@@ -142,7 +159,7 @@ type Codex struct {
 // Default returns the shipped configuration.
 func Default() *Config {
 	return &Config{
-		Version:        4,
+		Version:        5,
 		DisplayMode:    ModeBoth,
 		DisplaySources: []string{model.SourceClaudeCode, model.SourceCodex},
 		DisplayLimits: map[string]LimitDisplay{
@@ -156,12 +173,16 @@ func Default() *Config {
 			WindowsLayout: "stack",
 		},
 		Colors: Colors{
-			Good:          "#3DDC64",
-			Warn:          "#FFC63D",
-			Critical:      "#FF4C4C",
-			Unknown:       "#8E8E93",
-			Label:         "#8E8E93",
-			TextOnFill:    "#101010",
+			Light: ThemeColors{
+				Good: "#15803D", Warn: "#A16207", Critical: "#BE123C",
+				Unknown: "#52525B", Claude: "#A94F32", Codex: "#087567",
+				Period: "#25272B", TextOnFill: "#F8FAFC",
+			},
+			Dark: ThemeColors{
+				Good: "#4ADE80", Warn: "#FACC15", Critical: "#FB7185",
+				Unknown: "#A1A1AA", Claude: "#E58A68", Codex: "#52C7B8",
+				Period: "#F2F2F2", TextOnFill: "#101010",
+			},
 			WarnBelow:     50,
 			CriticalBelow: 20,
 		},
@@ -245,8 +266,8 @@ func Load() (*Config, error) {
 }
 
 // migrate updates only values that are known to be an old shipped default.
-// V4 makes the period selection independent per service and enlarges the
-// default macOS artwork. Older global selections are copied to both services.
+// V4 made period selection independent per service. V5 added separate light
+// and dark palettes; customized legacy colours are copied to both appearances.
 func (c *Config) migrate(data []byte) bool {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(data, &raw) != nil {
@@ -256,27 +277,104 @@ func (c *Config) migrate(data []byte) bool {
 	if encoded, ok := raw["version"]; ok {
 		_ = json.Unmarshal(encoded, &version)
 	}
-	if version >= 4 {
+	if version >= 5 {
 		return false
 	}
-	if version == 0 && sameStrings(c.Windows, []string{"5h", "weekly", "monthly"}) {
-		c.Windows = []string{"5h"}
-	}
-	if version < 3 {
-		c.AutoShortest = true
-	}
-	c.DisplayLimits = map[string]LimitDisplay{}
-	for _, source := range allDisplaySources {
-		c.DisplayLimits[source] = LimitDisplay{
-			AutoShortest: c.AutoShortest,
-			Windows:      append([]string(nil), c.Windows...),
+	if version < 4 {
+		if version == 0 && sameStrings(c.Windows, []string{"5h", "weekly", "monthly"}) {
+			c.Windows = []string{"5h"}
+		}
+		if version < 3 {
+			c.AutoShortest = true
+		}
+		c.DisplayLimits = map[string]LimitDisplay{}
+		for _, source := range allDisplaySources {
+			c.DisplayLimits[source] = LimitDisplay{
+				AutoShortest: c.AutoShortest,
+				Windows:      append([]string(nil), c.Windows...),
+			}
+		}
+		if c.Icon.DotSize <= 1.0 {
+			c.Icon.DotSize = 1.2
 		}
 	}
-	if c.Icon.DotSize <= 1.0 {
-		c.Icon.DotSize = 1.2
-	}
-	c.Version = 4
+	c.migrateLegacyColors()
+	c.Version = 5
 	return true
+}
+
+func (c *Config) migrateLegacyColors() {
+	legacy := ThemeColors{
+		Good: c.Colors.LegacyGood, Warn: c.Colors.LegacyWarn,
+		Critical: c.Colors.LegacyCritical, Unknown: c.Colors.LegacyUnknown,
+		Period: c.Colors.LegacyLabel, TextOnFill: c.Colors.LegacyTextOnFill,
+	}
+	// Preserve a user's custom V1-V4 palette. The old shipped palette is
+	// replaced by the more legible theme-aware defaults.
+	oldDefault := ThemeColors{
+		Good: "#3DDC64", Warn: "#FFC63D", Critical: "#FF4C4C",
+		Unknown: "#8E8E93", Period: "#8E8E93", TextOnFill: "#101010",
+	}
+	if legacy.Good != "" && legacy != oldDefault {
+		c.Colors.Light = overlayTheme(c.Colors.Light, legacy)
+		c.Colors.Dark = overlayTheme(c.Colors.Dark, legacy)
+	}
+	c.Colors.LegacyGood = ""
+	c.Colors.LegacyWarn = ""
+	c.Colors.LegacyCritical = ""
+	c.Colors.LegacyUnknown = ""
+	c.Colors.LegacyLabel = ""
+	c.Colors.LegacyTextOnFill = ""
+}
+
+func overlayTheme(dst, src ThemeColors) ThemeColors {
+	if src.Good != "" {
+		dst.Good = src.Good
+	}
+	if src.Warn != "" {
+		dst.Warn = src.Warn
+	}
+	if src.Critical != "" {
+		dst.Critical = src.Critical
+	}
+	if src.Unknown != "" {
+		dst.Unknown = src.Unknown
+	}
+	if src.Period != "" {
+		dst.Period = src.Period
+	}
+	if src.TextOnFill != "" {
+		dst.TextOnFill = src.TextOnFill
+	}
+	return dst
+}
+
+func fillTheme(dst, defaults ThemeColors) ThemeColors {
+	if dst.Good == "" {
+		dst.Good = defaults.Good
+	}
+	if dst.Warn == "" {
+		dst.Warn = defaults.Warn
+	}
+	if dst.Critical == "" {
+		dst.Critical = defaults.Critical
+	}
+	if dst.Unknown == "" {
+		dst.Unknown = defaults.Unknown
+	}
+	if dst.Claude == "" {
+		dst.Claude = defaults.Claude
+	}
+	if dst.Codex == "" {
+		dst.Codex = defaults.Codex
+	}
+	if dst.Period == "" {
+		dst.Period = defaults.Period
+	}
+	if dst.TextOnFill == "" {
+		dst.TextOnFill = defaults.TextOnFill
+	}
+	return dst
 }
 
 func sameStrings(a, b []string) bool {
@@ -326,8 +424,13 @@ func (c *Config) normalise() {
 			c.DisplayLimits[source] = selection
 		}
 	}
-	if c.Colors.Good == "" {
-		c.Colors = d.Colors
+	c.Colors.Light = fillTheme(c.Colors.Light, d.Colors.Light)
+	c.Colors.Dark = fillTheme(c.Colors.Dark, d.Colors.Dark)
+	if c.Colors.WarnBelow <= 0 {
+		c.Colors.WarnBelow = d.Colors.WarnBelow
+	}
+	if c.Colors.CriticalBelow <= 0 {
+		c.Colors.CriticalBelow = d.Colors.CriticalBelow
 	}
 	if c.Sources.ClaudeCode.Weights.Output == 0 {
 		c.Sources.ClaudeCode.Weights = d.Sources.ClaudeCode.Weights

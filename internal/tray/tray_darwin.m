@@ -54,6 +54,28 @@ void ubRun(void) {
   }
 }
 
+static int ubReadDarkMode(void) {
+  NSAppearance *appearance = gDelegate.item.button.effectiveAppearance;
+  if (appearance == nil) {
+    appearance = NSApp.effectiveAppearance;
+  }
+  NSString *match = [appearance bestMatchFromAppearancesWithNames:@[
+    NSAppearanceNameAqua, NSAppearanceNameDarkAqua
+  ]];
+  return [match isEqualToString:NSAppearanceNameDarkAqua] ? 1 : 0;
+}
+
+int ubIsDarkMode(void) {
+  if ([NSThread isMainThread]) {
+    return ubReadDarkMode();
+  }
+  __block int dark = 0;
+  dispatch_sync(dispatch_get_main_queue(), ^{
+    dark = ubReadDarkMode();
+  });
+  return dark;
+}
+
 void ubSetIcon(const void *bytes, int len, double widthPt, double heightPt) {
   if (gDelegate == nil || bytes == NULL || len <= 0) {
     return;

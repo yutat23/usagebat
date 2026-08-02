@@ -1,6 +1,6 @@
 BINARY := usagebat
 APP := build/usagebat.app
-VERSION ?= 0.3.0
+VERSION ?= 0.4.0
 VERSION_PKG := github.com/yutat23/usagebat/internal/version
 VERSION_LDFLAGS := -X $(VERSION_PKG).Value=$(VERSION)
 

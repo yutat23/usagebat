@@ -41,8 +41,37 @@ func TestV2MigratesFromFixed5hToAutomaticShortest(t *testing.T) {
 	if !c.migrate([]byte(`{"version":2,"windows":["5h"]}`)) {
 		t.Fatal("expected v2 to migrate")
 	}
-	if auto, _ := c.LimitSelection(model.SourceCodex); !auto || c.Version != 4 {
+	if auto, _ := c.LimitSelection(model.SourceCodex); !auto || c.Version != 5 {
 		t.Fatalf("migrated config = auto %v version %d", auto, c.Version)
+	}
+}
+
+func TestV4DefaultColorsMigrateToThemePalettes(t *testing.T) {
+	c := Default()
+	c.Colors.LegacyGood = "#3DDC64"
+	c.Colors.LegacyWarn = "#FFC63D"
+	c.Colors.LegacyCritical = "#FF4C4C"
+	c.Colors.LegacyUnknown = "#8E8E93"
+	c.Colors.LegacyLabel = "#8E8E93"
+	c.Colors.LegacyTextOnFill = "#101010"
+	if !c.migrate([]byte(`{"version":4}`)) {
+		t.Fatal("expected v4 config to migrate")
+	}
+	if c.Version != 5 || c.Colors.Light.Good != "#15803D" || c.Colors.Dark.Good != "#4ADE80" {
+		t.Fatalf("theme defaults not installed: %+v", c.Colors)
+	}
+}
+
+func TestV4CustomColorsArePreservedForBothThemes(t *testing.T) {
+	c := Default()
+	c.Colors.LegacyGood = "#123456"
+	c.Colors.LegacyWarn = "#654321"
+	c.Colors.LegacyLabel = "#ABCDEF"
+	c.migrate([]byte(`{"version":4}`))
+	for name, theme := range map[string]ThemeColors{"light": c.Colors.Light, "dark": c.Colors.Dark} {
+		if theme.Good != "#123456" || theme.Warn != "#654321" || theme.Period != "#ABCDEF" {
+			t.Errorf("%s theme did not preserve custom colors: %+v", name, theme)
+		}
 	}
 }
 

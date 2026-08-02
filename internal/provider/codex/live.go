@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/hiddenprocess"
 	"github.com/yutat23/usagebat/internal/version"
 )
 
@@ -24,6 +25,7 @@ import (
 // newest file can belong to a session that stopped before a limit reset.
 func liveRateLimits(ctx context.Context, bin, home string) (*rateLimits, error) {
 	cmd := exec.CommandContext(ctx, bin, "app-server", "--stdio")
+	hiddenprocess.Configure(cmd)
 	cmd.Dir = os.TempDir()
 	cmd.Env = withEnv(os.Environ(), "CODEX_HOME", home)
 

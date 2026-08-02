@@ -36,24 +36,30 @@ const (
 
 // Palette is the resolved colour set.
 type Palette struct {
-	Good, Warn, Critical rgba
-	Unknown              rgba
-	Label                rgba
-	TextOnFill           rgba
-	WarnBelow            float64
-	CriticalBelow        float64
+	Good, Warn, Critical  rgba
+	Unknown               rgba
+	Claude, Codex, Period rgba
+	TextOnFill            rgba
+	WarnBelow             float64
+	CriticalBelow         float64
 }
 
 // PaletteFrom resolves configured hex strings, falling back to the defaults for
 // anything unparseable.
-func PaletteFrom(c config.Colors) Palette {
+func PaletteFrom(c config.Colors, dark bool) Palette {
+	t := c.Light
+	if dark {
+		t = c.Dark
+	}
 	return Palette{
-		Good:          parseHex(c.Good, rgba{0x3D, 0xDC, 0x64, 0xFF}),
-		Warn:          parseHex(c.Warn, rgba{0xFF, 0xC6, 0x3D, 0xFF}),
-		Critical:      parseHex(c.Critical, rgba{0xFF, 0x4C, 0x4C, 0xFF}),
-		Unknown:       parseHex(c.Unknown, rgba{0x8E, 0x8E, 0x93, 0xFF}),
-		Label:         parseHex(c.Label, rgba{0x8E, 0x8E, 0x93, 0xFF}),
-		TextOnFill:    parseHex(c.TextOnFill, rgba{0x10, 0x10, 0x10, 0xFF}),
+		Good:          parseHex(t.Good, rgba{0x15, 0x80, 0x3D, 0xFF}),
+		Warn:          parseHex(t.Warn, rgba{0xA1, 0x62, 0x07, 0xFF}),
+		Critical:      parseHex(t.Critical, rgba{0xBE, 0x12, 0x3C, 0xFF}),
+		Unknown:       parseHex(t.Unknown, rgba{0x52, 0x52, 0x5B, 0xFF}),
+		Claude:        parseHex(t.Claude, rgba{0xA9, 0x4F, 0x32, 0xFF}),
+		Codex:         parseHex(t.Codex, rgba{0x08, 0x75, 0x67, 0xFF}),
+		Period:        parseHex(t.Period, rgba{0x25, 0x27, 0x2B, 0xFF}),
+		TextOnFill:    parseHex(t.TextOnFill, rgba{0xF8, 0xFA, 0xFC, 0xFF}),
 		WarnBelow:     orDefault(c.WarnBelow, 50),
 		CriticalBelow: orDefault(c.CriticalBelow, 20),
 	}
@@ -101,8 +107,13 @@ type Icon struct {
 // both a service and a period (for example "CL 5H"), unlike the legacy Window
 // API which labels only the period.
 type Cell struct {
-	Label  string
-	Status model.WindowStatus
+	// Service identifies the provider family and selects the CL/CX label and
+	// colour. Period is the independently coloured 5H/WK/MO suffix. Label is a
+	// compatibility fallback for callers that provide one unsplit caption.
+	Service string
+	Period  string
+	Label   string
+	Status  model.WindowStatus
 }
 
 // gaugeText is what goes inside (or in place of) the battery.
@@ -174,7 +185,7 @@ func Strip(windows []model.Window, st map[model.Window]model.WindowStatus, o Opt
 	for _, w := range windows {
 		s := st[w]
 		s.Window = w
-		cells = append(cells, Cell{Label: w.Label(), Status: s})
+		cells = append(cells, Cell{Period: w.Label(), Status: s})
 	}
 	return StripCells(cells, o)
 }
@@ -187,7 +198,7 @@ func StripCells(items []Cell, o Options) *Icon {
 
 	cells := make([]*canvas, 0, len(items))
 	for _, item := range items {
-		cells = append(cells, stripCellCanvas(item.Label, item.Status, o))
+		cells = append(cells, stripCellCanvas(item, o))
 	}
 
 	totalW, totalH := 0, 0
@@ -213,7 +224,10 @@ func StripCells(items []Cell, o Options) *Icon {
 	return &Icon{Image: out.toImage(o.Scale), DotsW: out.w, DotsH: out.h}
 }
 
-func stripCellCanvas(label string, st model.WindowStatus, o Options) *canvas {
+func stripCellCanvas(item Cell, o Options) *canvas {
+	service, period := cellLabels(item)
+	label := service + period
+	st := item.Status
 	labelW := textWidth(label)
 
 	var artW, artH int
@@ -229,7 +243,7 @@ func stripCellCanvas(label string, st model.WindowStatus, o Options) *canvas {
 	}
 	c := newCanvas(cellW, labelH+labelGap+artH)
 
-	drawText(c, (cellW-labelW)/2, 0, label, solid(o.Palette.Label))
+	drawCellLabel(c, (cellW-labelW)/2, service, period, item.Service, o.Palette)
 
 	ax, ay := (cellW-artW)/2, labelH+labelGap
 	if o.Mode == config.ModePercent {
@@ -240,6 +254,36 @@ func stripCellCanvas(label string, st model.WindowStatus, o Options) *canvas {
 		drawBattery(c, ax, ay, st, o, o.Mode == config.ModeBoth)
 	}
 	return c
+}
+
+func cellLabels(item Cell) (string, string) {
+	if item.Period == "" {
+		return "", item.Label
+	}
+	switch item.Service {
+	case model.SourceClaudeCode:
+		return "CL", item.Period
+	case model.SourceCodex:
+		return "CX", item.Period
+	default:
+		return "", item.Period
+	}
+}
+
+func drawCellLabel(c *canvas, x int, service, period, source string, p Palette) {
+	if service != "" {
+		col := p.Period
+		if source == model.SourceClaudeCode {
+			col = p.Claude
+		} else if source == model.SourceCodex {
+			col = p.Codex
+		}
+		drawText(c, x, 0, service, solid(col))
+		x += textWidth(service) + glyphGap
+	}
+	if period != "" {
+		drawText(c, x, 0, period, solid(p.Period))
+	}
 }
 
 // Square geometry for Windows, whose tray icons are a fixed square with no room

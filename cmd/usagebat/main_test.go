@@ -27,10 +27,10 @@ func TestDisplayCellsUseShortestLimitPerService(t *testing.T) {
 	if len(cells) != 2 {
 		t.Fatalf("got %d cells, want one per service: %+v", len(cells), cells)
 	}
-	if cells[0].Label != "CL5H" || cells[0].Status.UsedPercent != 71 {
+	if cells[0].Service != model.SourceClaudeCode || cells[0].Period != "5H" || cells[0].Status.UsedPercent != 71 {
 		t.Errorf("Claude cell = %+v", cells[0])
 	}
-	if cells[1].Label != "CXMO" || cells[1].Status.UsedPercent != 12 {
+	if cells[1].Service != model.SourceCodex || cells[1].Period != "MO" || cells[1].Status.UsedPercent != 12 {
 		t.Errorf("Codex cell = %+v", cells[1])
 	}
 }
@@ -45,7 +45,7 @@ func TestDisplayCellsOmitUnavailableService(t *testing.T) {
 	}}
 
 	cells := a.displayCells(snap)
-	if len(cells) != 1 || cells[0].Label != "CXWK" {
+	if len(cells) != 1 || cells[0].Service != model.SourceCodex || cells[0].Period != "WK" {
 		t.Fatalf("only installed/present Codex should be drawn: %+v", cells)
 	}
 	menu := a.buildMenu(snap, time.Now())
@@ -110,7 +110,8 @@ func TestDisplayCellsUseIndependentExplicitLimits(t *testing.T) {
 		}},
 	}}
 	cells := a.displayCells(snap)
-	if len(cells) != 2 || cells[0].Label != "CLWK" || cells[1].Label != "CXMO" {
+	if len(cells) != 2 || cells[0].Service != model.SourceClaudeCode || cells[0].Period != "WK" ||
+		cells[1].Service != model.SourceCodex || cells[1].Period != "MO" {
 		t.Fatalf("independent cells = %+v", cells)
 	}
 }

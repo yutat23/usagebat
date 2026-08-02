@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/yutat23/usagebat/internal/hiddenprocess"
 	"github.com/yutat23/usagebat/internal/model"
 )
 
@@ -42,6 +43,7 @@ var resetPattern = regexp.MustCompile(
 // runUsage executes the slash command and returns its rendered text.
 func runUsage(ctx context.Context, bin string) (string, error) {
 	cmd := exec.CommandContext(ctx, bin, "-p", "/usage", "--output-format", "json")
+	hiddenprocess.Configure(cmd)
 	// Run somewhere neutral: the command inherits the working directory as its
 	// project context, and the app's own directory is not meaningful here.
 	cmd.Dir = os.TempDir()

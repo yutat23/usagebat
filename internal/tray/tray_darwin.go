@@ -51,6 +51,15 @@ func newBackend() Backend {
 // Layout implements Backend. macOS status items accept a wide image.
 func (b *darwinBackend) Layout() Layout { return LayoutStrip }
 
+// Appearance reports the effective menu-bar appearance. The Objective-C side
+// safely hops to AppKit's main thread when this is called by the refresh loop.
+func (b *darwinBackend) Appearance() Appearance {
+	if C.ubIsDarkMode() != 0 {
+		return AppearanceDark
+	}
+	return AppearanceLight
+}
+
 // Run implements Backend. It must be called from the main goroutine, which the
 // caller keeps locked to the main OS thread.
 func (b *darwinBackend) Run(onReady func(), onClick func(id string)) error {

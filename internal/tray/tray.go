@@ -15,6 +15,14 @@ const (
 	LayoutSquare
 )
 
+// Appearance is the system bar theme the icon is currently drawn against.
+type Appearance int
+
+const (
+	AppearanceLight Appearance = iota
+	AppearanceDark
+)
+
 // Item is one flat menu row. Submenus are expressed with Indent instead of
 // nesting, which both backends can represent faithfully.
 type Item struct {
@@ -44,6 +52,7 @@ type IconData struct {
 // goroutine and take effect on the platform's UI thread.
 type Backend interface {
 	Layout() Layout
+	Appearance() Appearance
 	Run(onReady func(), onClick func(id string)) error
 	SetIcon(IconData)
 	SetTooltip(string)

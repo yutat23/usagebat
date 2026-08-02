@@ -45,6 +45,8 @@ func newBackend() Backend {
 // Layout implements Backend.
 func (b *systrayBackend) Layout() Layout { return LayoutSquare }
 
+func (b *systrayBackend) Appearance() Appearance { return systemAppearance() }
+
 // Run implements Backend.
 func (b *systrayBackend) Run(onReady func(), onClick func(id string)) error {
 	b.mu.Lock()

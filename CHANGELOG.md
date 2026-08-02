@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 — 2026-08-02
+
+### Added
+
+- Added light- and dark-system-bar palettes on macOS and Windows
+- Added separate Claude (`CL`), Codex (`CX`), and shared period-label colors
+
+### Changed
+
+- Updated battery warning colors for stronger contrast on both light and dark bars
+- Migrated configuration to version 5 with independently customizable `colors.light` and `colors.dark` palettes
+
+### Fixed
+
+- Prevented Codex and Claude background refresh subprocesses from flashing Command Prompt windows on Windows
+
 ## 0.3.0 — 2026-08-02
 
 ### Added

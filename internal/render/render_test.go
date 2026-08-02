@@ -14,7 +14,7 @@ import (
 	"github.com/yutat23/usagebat/internal/model"
 )
 
-func testPalette() Palette { return PaletteFrom(config.Default().Colors) }
+func testPalette() Palette { return PaletteFrom(config.Default().Colors, false) }
 
 func known(used float64) model.WindowStatus {
 	return model.WindowStatus{Known: true, UsedPercent: used}
@@ -87,6 +87,30 @@ func TestStripPercentModeIsNarrower(t *testing.T) {
 	pct := Strip(windows, st, Options{Mode: config.ModePercent, Palette: p, Scale: 1})
 	if pct.DotsH >= both.DotsH {
 		t.Errorf("percent-only mode should be shorter: %d vs %d", pct.DotsH, both.DotsH)
+	}
+}
+
+func TestProviderAndPeriodLabelsUseIndependentThemeColors(t *testing.T) {
+	p := PaletteFrom(config.Default().Colors, true)
+	c := stripCellCanvas(Cell{
+		Service: model.SourceClaudeCode, Period: "5H", Status: known(25),
+	}, Options{Mode: config.ModeBoth, Palette: p, Scale: 1})
+	counts := map[rgba]int{}
+	for y := 0; y < labelH; y++ {
+		for x := 0; x < c.w; x++ {
+			counts[c.px[y*c.w+x]]++
+		}
+	}
+	if counts[p.Claude] == 0 || counts[p.Period] == 0 {
+		t.Fatalf("label lacks service/period colors: Claude=%d period=%d", counts[p.Claude], counts[p.Period])
+	}
+}
+
+func TestLightAndDarkPalettesDiffer(t *testing.T) {
+	c := config.Default().Colors
+	light, dark := PaletteFrom(c, false), PaletteFrom(c, true)
+	if light.Good == dark.Good || light.Period == dark.Period || light.Claude == dark.Claude {
+		t.Fatal("theme-aware colors must differ between light and dark appearances")
 	}
 }
 
@@ -244,11 +268,36 @@ func TestWritePreview(t *testing.T) {
 	dump("square-stack.png", Square(model.AllWindows, st, Options{Mode: config.ModeBoth, Palette: p, Scale: 8}, "stack"))
 	dump("square-single.png", Square(model.AllWindows, st, Options{Mode: config.ModeBoth, Palette: p, Scale: 8}, "single"))
 	providerCells := []Cell{
-		{Label: "CL5H", Status: known(71)},
-		{Label: "CXMO", Status: known(0)},
+		{Service: model.SourceClaudeCode, Period: "5H", Status: known(71)},
+		{Service: model.SourceCodex, Period: "MO", Status: known(0)},
 	}
 	dump("strip-providers.png", StripCells(providerCells, Options{Mode: config.ModeBoth, Palette: p, Scale: 8}))
 	dump("square-providers.png", SquareCells(providerCells, Options{Mode: config.ModeBoth, Palette: p, Scale: 8}, "stack"))
+
+	// Theme-specific provider previews make the tiny two-colour labels easy to
+	// inspect against their real target backgrounds.
+	for _, theme := range []struct {
+		name string
+		dark bool
+		bg   color.RGBA
+	}{
+		{name: "light", bg: color.RGBA{0xF5, 0xF5, 0xF7, 0xFF}},
+		{name: "dark", dark: true, bg: color.RGBA{0x1E, 0x1E, 0x20, 0xFF}},
+	} {
+		palette := PaletteFrom(config.Default().Colors, theme.dark)
+		icon := StripCells(providerCells, Options{Mode: config.ModeBoth, Palette: palette, Scale: 8})
+		const themePad = 16
+		out := image.NewRGBA(image.Rect(0, 0, icon.Image.Bounds().Dx()+themePad*2, icon.Image.Bounds().Dy()+themePad*2))
+		draw.Draw(out, out.Bounds(), &image.Uniform{theme.bg}, image.Point{}, draw.Src)
+		draw.Draw(out, icon.Image.Bounds().Add(image.Pt(themePad, themePad)), icon.Image, image.Point{}, draw.Over)
+		data, err := PNG(out)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "providers-"+theme.name+".png"), data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	// The art has to hold up on both a light and a dark menu bar, so composite
 	// contact sheets over each.

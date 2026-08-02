@@ -40,7 +40,6 @@ type app struct {
 	cfg       *config.Config
 	cfgMod    time.Time
 	providers []provider.Provider
-	palette   render.Palette
 
 	refresh chan struct{}
 	snap    atomic.Pointer[model.Snapshot]
@@ -130,7 +129,6 @@ func (a *app) dumpOnce(path string) error {
 
 // rebuild recreates everything derived from the config.
 func (a *app) rebuild() {
-	a.palette = render.PaletteFrom(a.cfg.Colors)
 	a.providers = nil
 	if a.cfg.Sources.ClaudeCode.Enabled && claudecode.Available(&a.cfg.Sources.ClaudeCode) {
 		a.providers = append(a.providers, claudecode.New(&a.cfg.Sources.ClaudeCode))
@@ -239,9 +237,10 @@ func (a *app) reloadConfigIfChanged() {
 
 func (a *app) renderIcon(snap *model.Snapshot) tray.IconData {
 	cells := a.displayCells(snap)
+	dark := a.backend.Appearance() == tray.AppearanceDark
 	opts := render.Options{
 		Mode:    a.cfg.DisplayMode,
-		Palette: a.palette,
+		Palette: render.PaletteFrom(a.cfg.Colors, dark),
 		Scale:   a.cfg.Icon.PixelScale,
 	}
 
@@ -296,14 +295,10 @@ func (a *app) displayCells(snap *model.Snapshot) []render.Cell {
 		if len(windows) == 0 {
 			windows = []model.Window{model.Window5h}
 		}
-		prefix := "CL"
-		if family == model.SourceCodex {
-			prefix = "CX"
-		}
 		for _, w := range windows {
 			st := aggregated.Icon[w]
 			st.Window = w
-			cells = append(cells, render.Cell{Label: prefix + w.Label(), Status: st})
+			cells = append(cells, render.Cell{Service: family, Period: w.Label(), Status: st})
 		}
 	}
 	return cells

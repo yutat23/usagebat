@@ -241,20 +241,20 @@ ICO は 16/20/24/32 px のマルチサイズで出力し、DPI スケーリン�
 
 ### 4.5 配色
 
-メニューバーはライト/ダーク両方あり得るため、**背景色に依存しない配色**にする
-（枠線も文字も accent 色で描き、黒や白のベタ塗りを避ける）。
+メニューバー／タスクバーのライト・ダークをOSから判定し、テーマ別の配色を使う。
+サービス略号と期間は役割を分け、`CL`/`CX` はサービス色、`5H`/`WK`/`MO`
+はすべて同じ高コントラストな期間色で描く。
 
-| 要素 | 色 |
-|---|---|
-| accent（残量 ≥ 50%） | `#3DDC64` 緑 |
-| accent（残量 ≥ 20%） | `#FFC63D` 黄 |
-| accent（残量 < 20%） | `#FF4C4C` 赤 |
-| 不明（`?`） | `#8E8E93` グレー |
-| 枠線・端子 | accent |
-| ゲージ塗り | accent |
-| 数字（塗り部分の上） | `#101010`（塗りに対して抜き文字） |
-| 数字（空白部分の上） | accent |
-| ラベル（5H/WK/MO） | `#8E8E93` |
+| 要素 | ライト | ダーク |
+|---|---|---|
+| Claude (`CL`) | `#A94F32` | `#E58A68` |
+| Codex (`CX`) | `#087567` | `#52C7B8` |
+| 期間 (`5H/WK/MO`) | `#25272B` | `#F2F2F2` |
+| accent（残量 ≥ 50%） | `#15803D` | `#4ADE80` |
+| accent（残量 ≥ 20%） | `#A16207` | `#FACC15` |
+| accent（残量 < 20%） | `#BE123C` | `#FB7185` |
+| 不明（`?`） | `#52525B` | `#A1A1AA` |
+| 数字（塗りの上） | `#F8FAFC` | `#101010` |
 
 しきい値・色はすべて設定可能。
 
@@ -339,7 +339,7 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 
 ```jsonc
 {
-  "version": 4,
+  "version": 5,
   "displayMode": "both",           // both | battery | percent
   "displaySources": ["claude-code", "codex"],
   "displayLimits": {
@@ -353,8 +353,16 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
     "windowsLayout": "stack"       // stack | single
   },
   "colors": {
-    "good": "#3DDC64", "warn": "#FFC63D", "critical": "#FF4C4C",
-    "unknown": "#8E8E93", "label": "#8E8E93", "textOnFill": "#101010",
+    "light": {
+      "good": "#15803D", "warn": "#A16207", "critical": "#BE123C",
+      "unknown": "#52525B", "claude": "#A94F32", "codex": "#087567",
+      "period": "#25272B", "textOnFill": "#F8FAFC"
+    },
+    "dark": {
+      "good": "#4ADE80", "warn": "#FACC15", "critical": "#FB7185",
+      "unknown": "#A1A1AA", "claude": "#E58A68", "codex": "#52C7B8",
+      "period": "#F2F2F2", "textOnFill": "#101010"
+    },
     "warnBelow": 50, "criticalBelow": 20
   },
   "sources": {
