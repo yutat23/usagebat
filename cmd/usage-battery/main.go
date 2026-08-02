@@ -23,6 +23,7 @@ import (
 	"github.com/yutat23/usage-battery/internal/provider/codex"
 	"github.com/yutat23/usage-battery/internal/render"
 	"github.com/yutat23/usage-battery/internal/tray"
+	"github.com/yutat23/usage-battery/internal/version"
 )
 
 func init() {
@@ -51,7 +52,12 @@ func main() {
 
 	dump := flag.String("dump", "",
 		"collect once, print the menu to stdout, write the icon to this path, and exit")
+	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
+	if *showVersion {
+		fmt.Println("usage-battery " + version.Value)
+		return
+	}
 
 	cfg, err := config.Load()
 	if err != nil {

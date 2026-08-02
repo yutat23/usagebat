@@ -1,12 +1,15 @@
 BINARY := usage-battery
 APP := build/UsageBattery.app
+VERSION ?= 0.1.0
+VERSION_PKG := github.com/yutat23/usage-battery/internal/version
+VERSION_LDFLAGS := -X $(VERSION_PKG).Value=$(VERSION)
 
-.PHONY: all build test vet run bundle windows clean
+.PHONY: all build test vet run bundle windows release clean
 
 all: test build
 
 build:
-	go build -o build/$(BINARY) ./cmd/usage-battery
+	MACOSX_DEPLOYMENT_TARGET=11.0 go build -ldflags "$(VERSION_LDFLAGS)" -o build/$(BINARY) ./cmd/usage-battery
 
 test:
 	go test ./...
@@ -26,25 +29,20 @@ dump: build
 # it is what a login item needs to point at.
 bundle: build
 	rm -rf $(APP)
-	mkdir -p $(APP)/Contents/MacOS
+	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cp build/$(BINARY) $(APP)/Contents/MacOS/$(BINARY)
-	printf '%s\n' \
-		'<?xml version="1.0" encoding="UTF-8"?>' \
-		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
-		'<plist version="1.0"><dict>' \
-		'  <key>CFBundleName</key><string>Usage Battery</string>' \
-		'  <key>CFBundleIdentifier</key><string>dev.yutat23.usage-battery</string>' \
-		'  <key>CFBundleExecutable</key><string>$(BINARY)</string>' \
-		'  <key>CFBundlePackageType</key><string>APPL</string>' \
-		'  <key>CFBundleShortVersionString</key><string>0.1.0</string>' \
-		'  <key>LSUIElement</key><true/>' \
-		'</dict></plist>' > $(APP)/Contents/Info.plist
+	cp LICENSE $(APP)/Contents/Resources/LICENSE.txt
+	sed 's/@VERSION@/$(VERSION)/g' packaging/Info.plist > $(APP)/Contents/Info.plist
+	codesign --force --deep --sign - $(APP)
 	@echo "built $(APP)"
 
 # -H windowsgui keeps a console window from opening behind the tray icon.
 windows:
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-		go build -ldflags "-H windowsgui" -o build/$(BINARY).exe ./cmd/usage-battery
+		go build -ldflags "-H windowsgui $(VERSION_LDFLAGS)" -o build/$(BINARY).exe ./cmd/usage-battery
+
+release:
+	./scripts/build-release.sh $(VERSION)
 
 clean:
 	rm -rf build

@@ -1,176 +1,160 @@
-# usage-battery
+# Usage Battery
 
-Claude Code と Codex が実際に持つ利用上限（5時間 / 週次 / 月次）の**残量**を、
-macOS のメニューバー・Windows のタスクトレイに**ドット絵のバッテリー**で常駐表示します。
+Usage Battery keeps the remaining Claude Code and Codex limits visible as a small pixel-art battery in the macOS menu bar or Windows system tray.
 
-```
- 5H
-▐87%▌
-```
+It shows remaining capacity, not usage: `100%` is full, and the battery drains as you work.
 
-- 残量 100% = 満充電。使うほど減ります
-- 50% 未満で黄、20% 未満で赤
-- クリック / 右クリックでメニューが開き、消費トークンとリセット時刻の内訳が見られます
-- 表示は「バッテリー + %」「バッテリーのみ」「% のみ」から選択
-- アイコンに含めるサービス（Claude Code / Codex / 両方）と制限期間を選択可能
-- CLIがインストールされていないサービスはアイコンとメニューから自動的に省略
-- メニューの「Launch at startup」でログイン時の自動起動を切り替え
-- 既定はサービスごとに、実際に存在する最短枠を1つずつ表示
+## Features
 
-設計の詳細と判断の根拠は [DESIGN.md](DESIGN.md) にあります。
+- Shows real 5-hour, weekly, or monthly limits when the service provides them
+- Keeps Claude Code and Codex in separate cells, with independent period settings
+- Lets you show Claude Code only, Codex only, or both
+- Automatically hides a service when its CLI is not installed
+- Shows reset times and token details in the tray menu
+- Offers battery with percentage, battery-only, and percentage-only styles
+- Changes from green to yellow below 50%, then red below 20%
+- Can launch automatically when you sign in
+- Supports multiple Codex profiles without mixing their limits
 
-## ビルドと起動
+## Download
 
-Go 1.21 以降が必要です（開発は 1.25 で行っています）。
+Download the appropriate file from the latest GitHub release:
 
-```sh
-# macOS
-make bundle
-open build/UsageBattery.app
+| Platform | Release file |
+|---|---|
+| macOS, Apple Silicon or Intel | `UsageBattery_0.1.0_macOS_universal.zip` |
+| Windows on an Intel or AMD processor | `usage-battery_0.1.0_windows_amd64.zip` |
+| Windows on ARM | `usage-battery_0.1.0_windows_arm64.zip` |
 
-# 直接動かす場合
-make run
+Most Windows computers need the `amd64` build. Use `arm64` only for a Windows on ARM device.
 
-# Windows 向けバイナリ（macOS からクロスビルド可）
-make windows
-```
+At least one supported CLI must be installed and signed in:
 
-ログイン時の自動起動は、トレイメニューの「Launch at startup」をチェックしてください。
-macOSではユーザーLaunchAgent、WindowsではユーザーRunエントリへ登録されるため、
-管理者権限は不要です。アプリを移動する場合は、移動後に一度チェックし直してください。
+- [Claude Code](https://code.claude.com/docs), or
+- [OpenAI Codex](https://developers.openai.com/codex/cli)
 
-## 設定
+### macOS
 
-初回起動時に設定ファイルが自動生成されます。
+1. Unzip the download.
+2. Move `UsageBattery.app` to `/Applications`.
+3. Open it. Usage Battery has no Dock icon; look for its battery in the menu bar.
+
+The v0.1.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
+
+### Windows
+
+1. Unzip the download to a permanent folder.
+2. Run `usage-battery.exe`.
+3. Look for its battery in the system tray. It may initially be inside the hidden-icons menu.
+
+The v0.1.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
+
+## Using the tray menu
+
+Click the menu-bar item on macOS, or right-click the tray icon on Windows. The menu lets you:
+
+- inspect every reported limit and its reset time;
+- choose the icon style;
+- include Claude Code, Codex, or both;
+- choose a different period for each service;
+- refresh immediately;
+- open the configuration file; and
+- enable **Launch at startup**.
+
+By default, Usage Battery selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CXMO` is a Codex monthly limit.
+
+If a service has multiple configured accounts, the icon uses the account with the least remaining capacity for the selected period. The menu still lists every account separately.
+
+## Where the numbers come from
+
+### Codex
+
+Usage Battery asks the Codex app server for the same live account limit snapshot used by Codex `/status`. These percentages and reset times are reported by the service and are not estimated.
+
+If the installed Codex version cannot provide a live snapshot, Usage Battery can fall back to the newest rate-limit record in `$CODEX_HOME/sessions`. An expired record is never shown as a current value.
+
+### Claude Code
+
+Current Claude Code versions cache service-reported utilization in `~/.claude.json`. Usage Battery reads the 5-hour and weekly figures, reset times, and any additional limits actually present in that cache. A cached value older than 15 minutes is not treated as current by default.
+
+For compatibility with older versions, it can also try `claude -p "/usage" --output-format json`. If neither source provides a current percentage, configured 5-hour and weekly limits can be estimated from local transcript token accounting. Estimated rows are clearly marked with `(est)`. Usage Battery does not invent a monthly Claude limit.
+
+## Configuration
+
+The configuration file is created on first launch:
 
 - macOS: `~/Library/Application Support/usage-battery/config.json`
 - Windows: `%AppData%\usage-battery\config.json`
 
-メニューの「Open config file…」から開けます。**保存すると再起動なしで反映されます。**
+Choose **Open config file…** from the tray menu. Saved changes are reloaded without restarting the app.
 
-主な項目：
+Common settings include:
 
-| キー | 意味 |
+| Setting | Purpose |
 |---|---|
-| `version` | 設定スキーマのバージョン（自動管理） |
-| `displayMode` | `both` / `battery` / `percent` |
-| `displaySources` | アイコンに含めるサービス。`["claude-code","codex"]` |
-| `displayLimits.claude-code` | Claudeの最短自動・固定期間を設定 |
-| `displayLimits.codex` | Codexの最短自動・固定期間を設定 |
-| `refreshSeconds` | 更新間隔（既定 60 秒） |
-| `icon.dotSize` | 1 ドットあたりの pt。既定1.2（macOS） |
-| `icon.windowsLayout` | `stack`（3本バー）/ `single`（バッテリー1個）（Windows） |
-| `colors` | 配色としきい値 |
-| `sources.claudeCode.usageCacheFile` | 空なら `~/.claude.json` の実測キャッシュを読む |
-| `sources.claudeCode.usageCommand` | `/usage` ポーリングの設定（`path` を空にすると自動検出） |
-| `sources.claudeCode.limits` | `/usage` が返さないウィンドウの推定用（下記） |
-| `sources.codex.path` | Codex CLI。空なら `PATH` と標準的な配置から自動検出 |
-| `sources.codex.homes` | `["auto"]` で `$CODEX_HOME`、無ければ `~/.codex` |
+| `displayMode` | `both`, `battery`, or `percent` |
+| `displaySources` | Services included in the icon |
+| `displayLimits.claude-code` | Claude Code's automatic or explicit periods |
+| `displayLimits.codex` | Codex's automatic or explicit periods |
+| `refreshSeconds` | Refresh interval; 60 seconds by default |
+| `icon.dotSize` | macOS menu-bar artwork size |
+| `icon.windowsLayout` | `stack` or `single` on Windows |
+| `colors` | Battery colors and warning thresholds |
+| `sources.claudeCode.usageCommand.path` | Explicit Claude executable path, if auto-detection fails |
+| `sources.codex.path` | Explicit Codex executable path, if auto-detection fails |
+| `sources.codex.homes` | Codex profile directories |
 
-## データの出どころ（重要）
+### Multiple Codex profiles
 
-**2つのソースで取得できる情報の質が違います。**
-
-### Codex — 実測値
-
-本アプリは Codex CLI の app server に問い合わせ、`/status` と同じアカウントの
-レート制限情報をライブ取得します。使用率・期間・リセット時刻はいずれも
-Codexサービスの実測値で、**推定は入りません**。
-
-CLIが古い、または一時的に応答しない場合のみ、セッションログ
-（`$CODEX_HOME/sessions/**/rollout-*.jsonl`）の最新値へフォールバックします。
-リセット時刻を過ぎたログは現在値として表示しません。
-
-既定 (`homes: ["auto"]`) が見るのは **`$CODEX_HOME`、無ければ `~/.codex` だけ**です。
-
-仕事用と個人用のように `CODEX_HOME` を切り替えて使っている場合は、明示的に列挙してください。
+`"auto"` uses `$CODEX_HOME`, or `~/.codex` when the environment variable is unset. Additional profiles must be named explicitly:
 
 ```json
-"codex": { "enabled": true, "path": "", "timeoutSeconds": 15,
-           "homes": ["~/.codex-work", "~/.codex-personal"] }
+"codex": {
+  "enabled": true,
+  "path": "",
+  "timeoutSeconds": 15,
+  "homes": ["~/.codex-work", "~/.codex-personal"]
+}
 ```
 
-**別ホームは別アカウント＝別枠の上限**なので、列挙したホームはそれぞれ独立した項目として
-メニューに並びます（1つに畳んで混ぜることはしません）。
-アイコンには、表示対象として選んだソース中で最も残量の少ない値が出ます。
+Each home is shown as a separate account. Usage Battery deliberately does not scan arbitrary `.codex-*` directories because that could display a different account without the user selecting it.
 
-ディレクトリを勝手に探し回らないのは意図的です。ユーザーが名指ししていないホームを
-拾ってしまうと、別アカウントの残量をメニューバーに出すことになりかねないためです。
-`~/.codex-*` が実在するのに `auto` で見つからなかった場合は、
-「これを `homes` に追加してください」とメニューに出します。
+## Automatic startup
 
-### Claude Code — ローカル利用量キャッシュの実測値（＋足りない分だけ推定）
+Enable **Launch at startup** in the tray menu. It creates a per-user LaunchAgent on macOS or a per-user Run entry on Windows, so administrator access is not required.
 
-現在のClaude Codeは、サービスから取得した利用率を `~/.claude.json` の
-`cachedUsageUtilization` に保存します。本アプリは `five_hour` / `seven_day` とリセット時刻を
-ここから読みます。キャッシュなので、既定では15分を超えて古い値は実測値として使いません。
+The registration points to the app's current location. If you move the app or executable later, disable and re-enable the option.
 
-古いClaude Codeとの互換性のため `claude -p "/usage" --output-format json` も
-フォールバックとして残しています。現在のCLIではこのコマンドが契約枠ではなくヘッドレス実行自身の
-コストを返すため、認識できない出力は安全に捨てて推定へ移ります。
+## Privacy
 
-Finder から起動するとアプリの PATH が最小限になるため、`claude` は
-`~/.local/bin` / `~/.claude/local` / Homebrew / `/usr/local/bin` も明示的に探します。
-見つからない場合は `sources.claudeCode.usageCommand.path` に絶対パスを書いてください。
+Usage Battery has no analytics service and does not upload your transcripts or credentials. It reads local CLI state and asks the installed Codex CLI for account limit data. Authentication remains managed by Claude Code and Codex.
 
-実測キャッシュが返すのは通常 5h と weekly です（プランによる）。標準の月次枠はないため、
-**monthly は推定で作りません**。将来キャッシュが月次枠を実際に返した場合だけ表示します。
-キャッシュが無い・古い場合、設定済みの 5h / weekly 枠は推定にフォールバックします。
+## Troubleshooting
 
-```
-加重トークン = モデル係数 × ( 入力×1 + 出力×5 + キャッシュ作成×1.25 + キャッシュ読込×0.1 )
-モデル係数: opus=5, sonnet=1, haiku=0.2
-残量% = 100 − 加重トークン / limits[window] × 100
-```
-
-> **推定値には `(est)` が付きます。** 係数も上限値も非公開仕様なので実測とはズレます。
-> 実際、既定値のままだと 5h の推定は実測 51% 残に対して 0% 残とかなり外れました。
-> 実測キャッシュが新鮮な限りそちらが常に優先されるので、通常は気にする必要はありません。
-
-**較正のしかた**：メニューに加重トークンの実数が出ています。
-実測キャッシュの値と突き合わせて `limits` を調整してください。
-`0` にすると推定をやめ、そのウィンドウは `?` 表示になります。
-
-ウィンドウの区切り方も設定できます（推定時のみ影響します）：
-
-| ウィンドウ | 既定 | 備考 |
-|---|---|---|
-| `5h` | 直近の 5h ブロック | 最初の発話を時刻切り捨てして開始、5h 経過か 5h 無活動で次のブロック |
-| `weekly` | ローリング 7 日 | `weeklyMode: "calendar"` で暦週 |
-
-## アイコンに出る値
-
-既定ではサービスごとに実在する最短期間を選び、Claudeは `CL5H`、Codexは `CXMO` のように
-別々のセルで表示します。同じサービスに複数アカウントがある場合だけ、同じ期間のうち
-最も残量が少ない値を採用します。
-サービスと期間はメニューでいつでも切り替えられ、ソース別の全内訳もメニューで確認できます。
-期間指定はClaudeとCodexで独立しており、たとえばClaudeだけ5h、Codexだけmonthlyにできます。
-
-## プラットフォーム差
-
-- **macOS**: メニューバーは横長画像を許すので、選択した期間を横に並べます
-- **Windows**: タスクトレイは正方形固定でテキストを添えられないため、
-  1項目なら領域いっぱいのバッテリー、複数なら領域を使い切るバーを積みます。
-  16〜64pxのDPI別アイコンを内蔵し、Windows側で縮小されにくくしています。
-  数値はツールチップとメニューで確認してください
-
-## トラブルシュート
-
-現在読めているデータをそのまま出力します。
+Use the diagnostic dump to print the data Usage Battery currently sees and write the rendered icon:
 
 ```sh
-./build/usage-battery -dump /tmp/icon.png
+# macOS or a source build
+./usage-battery -dump icon.png
+
+# Windows
+usage-battery.exe -dump icon.ico
 ```
 
-メニューに出るはずの内容が標準出力に、アイコンが `/tmp/icon.png` に書かれます。
+If a CLI is installed but absent from the menu, set its absolute executable path in the configuration file. Menu-bar apps often inherit a smaller `PATH` than an interactive terminal.
 
-## 開発
+## Building from source
+
+Go 1.25 or newer is required.
 
 ```sh
-make test        # 全テスト
-make vet
-USAGE_BATTERY_PREVIEW_DIR=/tmp/preview go test ./internal/render/ -run Preview
+make test
+make bundle   # macOS app bundle
+make windows  # Windows AMD64 executable
 ```
 
-最後のコマンドは各表示モード・各残量のアイコンを PNG に書き出し、
-明背景・暗背景に合成したコンタクトシート（`sheet-light.png` / `sheet-dark.png`）も作ります。
+See [DESIGN.md](DESIGN.md) for the data model, provider behavior, and platform implementation details.
+
+## License
+
+[MIT](LICENSE) © 2026 yutat23
