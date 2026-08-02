@@ -8,6 +8,18 @@ usagebatは、Claude CodeとCodexの残り利用枠を、macOSのメニューバ
 
 表示するのは使用率ではなく残量です。`100%`が満タンで、利用するほど電池が減っていきます。
 
+## スクリーンショット
+
+### macOS
+
+<img src="assets/screenshot_macos.png" width="904" alt="macOSメニューバーにClaude CodeとCodexの制限を個別表示するusagebat">
+
+### Windows
+
+<img src="assets/screenshot_windows.png" width="532" alt="Windowsシステムトレイに残り利用枠を表示するusagebat">
+
+Windowsのトレイアイコンは正方形に固定されています。既定の`stack`レイアウトでは、表示する制限が1つなら残量%入りのバッテリー、2つ以上なら数字なしの横バーを積み重ねた表示へ自動的に切り替わります。正確な値はツールチップとトレイメニューで確認できます。常に最も逼迫した制限1つだけを表示する場合は、`icon.windowsLayout`を`single`に設定してください。
+
 ## 主な機能
 
 - サービスが提供する5時間・週間・月間の実測値を表示

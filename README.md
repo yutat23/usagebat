@@ -8,6 +8,18 @@ usagebat keeps the remaining Claude Code and Codex limits visible as a small pix
 
 It shows remaining capacity, not usage: `100%` is full, and the battery drains as you work.
 
+## Screenshots
+
+### macOS
+
+<img src="assets/screenshot_macos.png" width="904" alt="usagebat showing separate Claude Code and Codex limits in the macOS menu bar">
+
+### Windows
+
+<img src="assets/screenshot_windows.png" width="532" alt="usagebat showing a remaining limit in the Windows system tray">
+
+Windows tray icons have a fixed square shape. With the default `stack` layout, one selected limit is shown as a battery with its percentage, while two or more limits switch to stacked horizontal bars without numbers. Exact values remain available in the tooltip and tray menu. Set `icon.windowsLayout` to `single` to always show only the most constrained limit.
+
 ## Features
 
 - Shows real 5-hour, weekly, or monthly limits when the service provides them
