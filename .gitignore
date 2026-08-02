@@ -1,0 +1,19 @@
+# Build artifacts
+/build/
+/dist/
+*.exe
+*.test
+*.out
+coverage.*
+
+# Runtime and local development files
+*.log
+.env
+.env.*
+!.env.example
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
