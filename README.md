@@ -147,6 +147,24 @@ If a CLI is installed but absent from the menu, set its absolute executable path
 
 Go 1.25 or newer is required.
 
+### Install with Go
+
+You can install the command directly from the tagged source:
+
+```sh
+go install github.com/yutat23/usage-battery/cmd/usage-battery@v0.1.0
+```
+
+The binary is normally written to `~/go/bin` on macOS or `%USERPROFILE%\go\bin` on Windows. This route is intended for developers:
+
+- macOS requires Xcode Command Line Tools and installs a standalone binary rather than an `.app` bundle.
+- Windows builds made by plain `go install` are not linked as a GUI subsystem application, so a console window may appear.
+- The embedded version reports `dev` because `go install` does not use this project's release linker flags.
+
+For the normal desktop experience, use the prebuilt release archive instead.
+
+### Local build
+
 ```sh
 make test
 make bundle   # macOS app bundle
