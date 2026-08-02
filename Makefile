@@ -1,10 +1,10 @@
 BINARY := usagebat
 APP := build/usagebat.app
-VERSION ?= 0.2.0
+VERSION ?= 0.3.0
 VERSION_PKG := github.com/yutat23/usagebat/internal/version
 VERSION_LDFLAGS := -X $(VERSION_PKG).Value=$(VERSION)
 
-.PHONY: all build test vet run bundle windows release clean
+.PHONY: all build test vet run icons bundle windows release clean
 
 all: test build
 
@@ -19,7 +19,10 @@ vet:
 
 # Run in the foreground; Ctrl-C to stop.
 run: build
-	./build/$(BINARY)
+	./build/$(BINARY) --foreground
+
+icons:
+	./scripts/generate-icons.sh
 
 # Print what the app currently reads, and dump the icon it would draw.
 dump: build
@@ -32,6 +35,7 @@ bundle: build
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	cp build/$(BINARY) $(APP)/Contents/MacOS/$(BINARY)
 	cp LICENSE $(APP)/Contents/Resources/LICENSE.txt
+	cp packaging/usagebat.icns $(APP)/Contents/Resources/usagebat.icns
 	sed 's/@VERSION@/$(VERSION)/g' packaging/Info.plist > $(APP)/Contents/Info.plist
 	codesign --force --deep --sign - $(APP)
 	@echo "built $(APP)"

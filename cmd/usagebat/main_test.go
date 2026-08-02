@@ -73,6 +73,25 @@ func TestRebuildCreatesOnlyInstalledProviders(t *testing.T) {
 	}
 }
 
+func TestShouldDetachOnlyInteractiveDefaultRun(t *testing.T) {
+	if !shouldDetach(false, "", true) {
+		t.Fatal("an interactive default run should detach")
+	}
+	for _, tc := range []struct {
+		foreground  bool
+		dump        string
+		interactive bool
+	}{
+		{foreground: true, interactive: true},
+		{dump: "icon.png", interactive: true},
+		{},
+	} {
+		if shouldDetach(tc.foreground, tc.dump, tc.interactive) {
+			t.Fatalf("unexpected detach for %+v", tc)
+		}
+	}
+}
+
 func TestDisplayCellsUseIndependentExplicitLimits(t *testing.T) {
 	cfg := config.Default()
 	cfg.DisplayLimits[model.SourceClaudeCode] = config.LimitDisplay{

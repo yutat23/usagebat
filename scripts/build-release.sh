@@ -4,7 +4,7 @@ set -eu
 version=${1:-}
 case "$version" in
   ''|*[!0-9.]*|.*|*.)
-    echo "usage: $0 VERSION (for example: 0.2.0)" >&2
+    echo "usage: $0 VERSION (for example: 0.3.0)" >&2
     exit 2
     ;;
 esac
@@ -40,6 +40,7 @@ lipo -create \
   -output "$stage/usagebat.app/Contents/MacOS/usagebat"
 sed "s/@VERSION@/$version/g" packaging/Info.plist > "$stage/usagebat.app/Contents/Info.plist"
 cp LICENSE "$stage/usagebat.app/Contents/Resources/LICENSE.txt"
+cp packaging/usagebat.icns "$stage/usagebat.app/Contents/Resources/usagebat.icns"
 codesign --force --deep --sign - "$stage/usagebat.app"
 ditto -c -k --keepParent --norsrc "$stage/usagebat.app" \
   "$release_dir/usagebat_${version}_macOS_universal.zip"

@@ -1,5 +1,7 @@
 # usagebat
 
+<img src="assets/usagebat.png" width="160" alt="usagebat pixel-art battery bat icon">
+
 usagebat keeps the remaining Claude Code and Codex limits visible as a small pixel-art battery in the macOS menu bar or Windows system tray.
 
 It shows remaining capacity, not usage: `100%` is full, and the battery drains as you work.
@@ -22,9 +24,9 @@ Download the appropriate file from the latest GitHub release:
 
 | Platform | Release file |
 |---|---|
-| macOS, Apple Silicon or Intel | `usagebat_0.2.0_macOS_universal.zip` |
-| Windows on an Intel or AMD processor | `usagebat_0.2.0_windows_amd64.zip` |
-| Windows on ARM | `usagebat_0.2.0_windows_arm64.zip` |
+| macOS, Apple Silicon or Intel | `usagebat_0.3.0_macOS_universal.zip` |
+| Windows on an Intel or AMD processor | `usagebat_0.3.0_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.3.0_windows_arm64.zip` |
 
 Most Windows computers need the `amd64` build. Use `arm64` only for a Windows on ARM device.
 
@@ -39,7 +41,7 @@ At least one supported CLI must be installed and signed in:
 2. Move `usagebat.app` to `/Applications`.
 3. Open it. usagebat has no Dock icon; look for its battery in the menu bar.
 
-The v0.2.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
+The v0.3.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
 
 ### Windows
 
@@ -47,7 +49,7 @@ The v0.2.0 build is not notarized. If macOS blocks the first launch, Control-cli
 2. Run `usagebat.exe`.
 3. Look for its battery in the system tray. It may initially be inside the hidden-icons menu.
 
-The v0.2.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
+The v0.3.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
 
 ## Using the tray menu
 
@@ -152,7 +154,7 @@ Go 1.25 or newer is required.
 You can install the command directly from the tagged source:
 
 ```sh
-go install github.com/yutat23/usagebat/cmd/usagebat@v0.2.0
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.3.0
 ```
 
 The binary is normally written to `~/go/bin` on macOS or `%USERPROFILE%\go\bin` on Windows. This route is intended for developers:
@@ -160,6 +162,8 @@ The binary is normally written to `~/go/bin` on macOS or `%USERPROFILE%\go\bin` 
 - macOS requires Xcode Command Line Tools and installs a standalone binary rather than an `.app` bundle.
 - Windows builds made by plain `go install` are not linked as a GUI subsystem application, so a console window may appear.
 - Tagged `go install` builds derive their version from Go module metadata.
+
+Running `usagebat` from an interactive terminal starts the tray app in the background and returns to the prompt. Use `usagebat --foreground` when you want the process to stay attached for debugging.
 
 For the normal desktop experience, use the prebuilt release archive instead.
 
@@ -169,6 +173,7 @@ For the normal desktop experience, use the prebuilt release archive instead.
 make test
 make bundle   # macOS app bundle
 make windows  # Windows AMD64 executable
+make icons    # regenerate macOS and Windows app-icon resources
 ```
 
 See [DESIGN.md](DESIGN.md) for the data model, provider behavior, and platform implementation details.

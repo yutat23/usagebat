@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0 — 2026-08-02
+
+### Added
+
+- Added a pixel-art battery-bat app icon to macOS bundles and Windows executables
+- Added `--foreground` for terminal-attached debugging
+
+### Changed
+
+- Interactive `usagebat` launches now detach after starting the tray app and return control to the terminal
+
 ## 0.2.0 — 2026-08-02
 
 ### Changed

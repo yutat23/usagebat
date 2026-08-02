@@ -52,10 +52,18 @@ func main() {
 
 	dump := flag.String("dump", "",
 		"collect once, print the menu to stdout, write the icon to this path, and exit")
+	foreground := flag.Bool("foreground", false, "run in the foreground and keep the terminal attached")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("usagebat " + version.String())
+		return
+	}
+	if shouldDetach(*foreground, *dump, interactiveTerminal()) {
+		if err := launchDetached(); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("usagebat started in the background")
 		return
 	}
 	cfg, err := config.Load()
@@ -82,6 +90,10 @@ func main() {
 	if err := a.backend.Run(a.onReady, a.onClick); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func shouldDetach(foreground bool, dump string, interactive bool) bool {
+	return !foreground && dump == "" && interactive
 }
 
 // dumpOnce runs one collection without starting the tray. It exists so the
