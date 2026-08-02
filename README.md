@@ -1,6 +1,6 @@
-# Usage Battery
+# usagebat
 
-Usage Battery keeps the remaining Claude Code and Codex limits visible as a small pixel-art battery in the macOS menu bar or Windows system tray.
+usagebat keeps the remaining Claude Code and Codex limits visible as a small pixel-art battery in the macOS menu bar or Windows system tray.
 
 It shows remaining capacity, not usage: `100%` is full, and the battery drains as you work.
 
@@ -22,9 +22,9 @@ Download the appropriate file from the latest GitHub release:
 
 | Platform | Release file |
 |---|---|
-| macOS, Apple Silicon or Intel | `UsageBattery_0.1.0_macOS_universal.zip` |
-| Windows on an Intel or AMD processor | `usage-battery_0.1.0_windows_amd64.zip` |
-| Windows on ARM | `usage-battery_0.1.0_windows_arm64.zip` |
+| macOS, Apple Silicon or Intel | `usagebat_0.2.0_macOS_universal.zip` |
+| Windows on an Intel or AMD processor | `usagebat_0.2.0_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.2.0_windows_arm64.zip` |
 
 Most Windows computers need the `amd64` build. Use `arm64` only for a Windows on ARM device.
 
@@ -36,18 +36,18 @@ At least one supported CLI must be installed and signed in:
 ### macOS
 
 1. Unzip the download.
-2. Move `UsageBattery.app` to `/Applications`.
-3. Open it. Usage Battery has no Dock icon; look for its battery in the menu bar.
+2. Move `usagebat.app` to `/Applications`.
+3. Open it. usagebat has no Dock icon; look for its battery in the menu bar.
 
-The v0.1.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
+The v0.2.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
 
 ### Windows
 
 1. Unzip the download to a permanent folder.
-2. Run `usage-battery.exe`.
+2. Run `usagebat.exe`.
 3. Look for its battery in the system tray. It may initially be inside the hidden-icons menu.
 
-The v0.1.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
+The v0.2.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
 
 ## Using the tray menu
 
@@ -61,7 +61,7 @@ Click the menu-bar item on macOS, or right-click the tray icon on Windows. The m
 - open the configuration file; and
 - enable **Launch at startup**.
 
-By default, Usage Battery selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CXMO` is a Codex monthly limit.
+By default, usagebat selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CXMO` is a Codex monthly limit.
 
 If a service has multiple configured accounts, the icon uses the account with the least remaining capacity for the selected period. The menu still lists every account separately.
 
@@ -69,22 +69,22 @@ If a service has multiple configured accounts, the icon uses the account with th
 
 ### Codex
 
-Usage Battery asks the Codex app server for the same live account limit snapshot used by Codex `/status`. These percentages and reset times are reported by the service and are not estimated.
+usagebat asks the Codex app server for the same live account limit snapshot used by Codex `/status`. These percentages and reset times are reported by the service and are not estimated.
 
-If the installed Codex version cannot provide a live snapshot, Usage Battery can fall back to the newest rate-limit record in `$CODEX_HOME/sessions`. An expired record is never shown as a current value.
+If the installed Codex version cannot provide a live snapshot, usagebat can fall back to the newest rate-limit record in `$CODEX_HOME/sessions`. An expired record is never shown as a current value.
 
 ### Claude Code
 
-Current Claude Code versions cache service-reported utilization in `~/.claude.json`. Usage Battery reads the 5-hour and weekly figures, reset times, and any additional limits actually present in that cache. A cached value older than 15 minutes is not treated as current by default.
+Current Claude Code versions cache service-reported utilization in `~/.claude.json`. usagebat reads the 5-hour and weekly figures, reset times, and any additional limits actually present in that cache. A cached value older than 15 minutes is not treated as current by default.
 
-For compatibility with older versions, it can also try `claude -p "/usage" --output-format json`. If neither source provides a current percentage, configured 5-hour and weekly limits can be estimated from local transcript token accounting. Estimated rows are clearly marked with `(est)`. Usage Battery does not invent a monthly Claude limit.
+For compatibility with older versions, it can also try `claude -p "/usage" --output-format json`. If neither source provides a current percentage, configured 5-hour and weekly limits can be estimated from local transcript token accounting. Estimated rows are clearly marked with `(est)`. usagebat does not invent a monthly Claude limit.
 
 ## Configuration
 
 The configuration file is created on first launch:
 
-- macOS: `~/Library/Application Support/usage-battery/config.json`
-- Windows: `%AppData%\usage-battery\config.json`
+- macOS: `~/Library/Application Support/usagebat/config.json`
+- Windows: `%AppData%\usagebat\config.json`
 
 Choose **Open config file…** from the tray menu. Saved changes are reloaded without restarting the app.
 
@@ -117,7 +117,7 @@ Common settings include:
 }
 ```
 
-Each home is shown as a separate account. Usage Battery deliberately does not scan arbitrary `.codex-*` directories because that could display a different account without the user selecting it.
+Each home is shown as a separate account. usagebat deliberately does not scan arbitrary `.codex-*` directories because that could display a different account without the user selecting it.
 
 ## Automatic startup
 
@@ -127,18 +127,18 @@ The registration points to the app's current location. If you move the app or ex
 
 ## Privacy
 
-Usage Battery has no analytics service and does not upload your transcripts or credentials. It reads local CLI state and asks the installed Codex CLI for account limit data. Authentication remains managed by Claude Code and Codex.
+usagebat has no analytics service and does not upload your transcripts or credentials. It reads local CLI state and asks the installed Codex CLI for account limit data. Authentication remains managed by Claude Code and Codex.
 
 ## Troubleshooting
 
-Use the diagnostic dump to print the data Usage Battery currently sees and write the rendered icon:
+Use the diagnostic dump to print the data usagebat currently sees and write the rendered icon:
 
 ```sh
 # macOS or a source build
-./usage-battery -dump icon.png
+./usagebat -dump icon.png
 
 # Windows
-usage-battery.exe -dump icon.ico
+usagebat.exe -dump icon.ico
 ```
 
 If a CLI is installed but absent from the menu, set its absolute executable path in the configuration file. Menu-bar apps often inherit a smaller `PATH` than an interactive terminal.
@@ -152,14 +152,14 @@ Go 1.25 or newer is required.
 You can install the command directly from the tagged source:
 
 ```sh
-go install github.com/yutat23/usage-battery/cmd/usage-battery@v0.1.0
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.2.0
 ```
 
 The binary is normally written to `~/go/bin` on macOS or `%USERPROFILE%\go\bin` on Windows. This route is intended for developers:
 
 - macOS requires Xcode Command Line Tools and installs a standalone binary rather than an `.app` bundle.
 - Windows builds made by plain `go install` are not linked as a GUI subsystem application, so a console window may appear.
-- The embedded version reports `dev` because `go install` does not use this project's release linker flags.
+- Tagged `go install` builds derive their version from Go module metadata.
 
 For the normal desktop experience, use the prebuilt release archive instead.
 

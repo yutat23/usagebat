@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 — 2026-08-02
+
+### Changed
+
+- Renamed the product, app, executable, Go module, configuration directory, and startup registration to `usagebat`
+- Added tagged module-version detection for `go install`
+
+The GitHub repository moved from `yutat23/usage-battery` to `yutat23/usagebat`. GitHub redirects the old URL, but new installations should use the new module path.
+
 ## 0.1.0 — 2026-08-02
 
 First public release.

@@ -1,5 +1,5 @@
-#ifndef USAGE_BATTERY_TRAY_DARWIN_H
-#define USAGE_BATTERY_TRAY_DARWIN_H
+#ifndef USAGEBAT_TRAY_DARWIN_H
+#define USAGEBAT_TRAY_DARWIN_H
 
 // Status-item control surface. Every function must be called on the main
 // thread; the Go side only calls them from within ubTick.

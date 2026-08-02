@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>Usage Battery</string>
+  <string>usagebat</string>
   <key>CFBundleDisplayName</key>
-  <string>Usage Battery</string>
+  <string>usagebat</string>
   <key>CFBundleIdentifier</key>
-  <string>dev.yutat23.usage-battery</string>
+  <string>dev.yutat23.usagebat</string>
   <key>CFBundleExecutable</key>
-  <string>usage-battery</string>
+  <string>usagebat</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>

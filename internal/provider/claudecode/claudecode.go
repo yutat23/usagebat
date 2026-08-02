@@ -24,8 +24,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yutat23/usage-battery/internal/config"
-	"github.com/yutat23/usage-battery/internal/model"
+	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/model"
 )
 
 // lookback bounds both the file scan and the retained entry set. It covers the

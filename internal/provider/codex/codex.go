@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yutat23/usage-battery/internal/config"
-	"github.com/yutat23/usage-battery/internal/model"
+	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/model"
 )
 
 // tailBytes bounds how much of a rollout file is scanned. Rate-limit events are

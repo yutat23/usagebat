@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yutat23/usage-battery/internal/model"
+	"github.com/yutat23/usagebat/internal/model"
 )
 
 // Older Claude Code releases made /usage report the real limit percentages in

@@ -1,7 +1,7 @@
-BINARY := usage-battery
-APP := build/UsageBattery.app
-VERSION ?= 0.1.0
-VERSION_PKG := github.com/yutat23/usage-battery/internal/version
+BINARY := usagebat
+APP := build/usagebat.app
+VERSION ?= 0.2.0
+VERSION_PKG := github.com/yutat23/usagebat/internal/version
 VERSION_LDFLAGS := -X $(VERSION_PKG).Value=$(VERSION)
 
 .PHONY: all build test vet run bundle windows release clean
@@ -9,7 +9,7 @@ VERSION_LDFLAGS := -X $(VERSION_PKG).Value=$(VERSION)
 all: test build
 
 build:
-	MACOSX_DEPLOYMENT_TARGET=11.0 go build -ldflags "$(VERSION_LDFLAGS)" -o build/$(BINARY) ./cmd/usage-battery
+	MACOSX_DEPLOYMENT_TARGET=11.0 go build -ldflags "$(VERSION_LDFLAGS)" -o build/$(BINARY) ./cmd/usagebat
 
 test:
 	go test ./...
@@ -39,7 +39,7 @@ bundle: build
 # -H windowsgui keeps a console window from opening behind the tray icon.
 windows:
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 \
-		go build -ldflags "-H windowsgui $(VERSION_LDFLAGS)" -o build/$(BINARY).exe ./cmd/usage-battery
+		go build -ldflags "-H windowsgui $(VERSION_LDFLAGS)" -o build/$(BINARY).exe ./cmd/usagebat
 
 release:
 	./scripts/build-release.sh $(VERSION)

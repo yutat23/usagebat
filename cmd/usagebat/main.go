@@ -1,4 +1,4 @@
-// Command usage-battery shows Claude Code and Codex limit headroom as a
+// Command usagebat shows Claude Code and Codex limit headroom as a
 // pixel-art battery in the macOS menu bar or the Windows tray.
 package main
 
@@ -15,15 +15,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/yutat23/usage-battery/internal/autostart"
-	"github.com/yutat23/usage-battery/internal/config"
-	"github.com/yutat23/usage-battery/internal/model"
-	"github.com/yutat23/usage-battery/internal/provider"
-	"github.com/yutat23/usage-battery/internal/provider/claudecode"
-	"github.com/yutat23/usage-battery/internal/provider/codex"
-	"github.com/yutat23/usage-battery/internal/render"
-	"github.com/yutat23/usage-battery/internal/tray"
-	"github.com/yutat23/usage-battery/internal/version"
+	"github.com/yutat23/usagebat/internal/autostart"
+	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/model"
+	"github.com/yutat23/usagebat/internal/provider"
+	"github.com/yutat23/usagebat/internal/provider/claudecode"
+	"github.com/yutat23/usagebat/internal/provider/codex"
+	"github.com/yutat23/usagebat/internal/render"
+	"github.com/yutat23/usagebat/internal/tray"
+	"github.com/yutat23/usagebat/internal/version"
 )
 
 func init() {
@@ -48,17 +48,16 @@ type app struct {
 
 func main() {
 	log.SetFlags(0)
-	log.SetPrefix("usage-battery: ")
+	log.SetPrefix("usagebat: ")
 
 	dump := flag.String("dump", "",
 		"collect once, print the menu to stdout, write the icon to this path, and exit")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Parse()
 	if *showVersion {
-		fmt.Println("usage-battery " + version.Value)
+		fmt.Println("usagebat " + version.String())
 		return
 	}
-
 	cfg, err := config.Load()
 	if err != nil {
 		// A broken config must not keep the app off the menu bar; defaults apply.
@@ -488,7 +487,7 @@ func tooltip(snap *model.Snapshot, now time.Time) string {
 		}
 	}
 	if len(lines) == 0 {
-		return "usage-battery: no data"
+		return "usagebat: no data"
 	}
 	return strings.Join(lines, "\n")
 }

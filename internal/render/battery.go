@@ -7,8 +7,8 @@ import (
 	"image"
 	"math"
 
-	"github.com/yutat23/usage-battery/internal/config"
-	"github.com/yutat23/usage-battery/internal/model"
+	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/model"
 )
 
 // Battery sprite geometry, in dots.

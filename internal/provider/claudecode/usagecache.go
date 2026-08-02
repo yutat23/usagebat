@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yutat23/usage-battery/internal/model"
+	"github.com/yutat23/usagebat/internal/model"
 )
 
 // cachedUsage is written by current Claude Code releases after fetching the

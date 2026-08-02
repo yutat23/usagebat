@@ -13,7 +13,7 @@ import (
 
 const (
 	runKeyPath = `Software\Microsoft\Windows\CurrentVersion\Run`
-	runValue   = "UsageBattery"
+	runValue   = "usagebat"
 )
 
 func Supported() bool { return true }

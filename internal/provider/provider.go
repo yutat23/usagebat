@@ -4,7 +4,7 @@ package provider
 import (
 	"time"
 
-	"github.com/yutat23/usage-battery/internal/model"
+	"github.com/yutat23/usagebat/internal/model"
 )
 
 // Provider collects the current usage state for one tool.

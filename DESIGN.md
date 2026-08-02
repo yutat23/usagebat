@@ -1,4 +1,4 @@
-# usage-battery 設計書
+# usagebat 設計書
 
 ## 1. これは何か
 
@@ -315,7 +315,7 @@ Codex (~/.codex-work)  —  plan: team    ← ホームごとに独立した見�
 ### 5.4 パッケージ構成
 
 ```
-cmd/usage-battery/main.go        エントリポイント（メインスレッド確保、更新ループ、メニュー配線）
+cmd/usagebat/main.go        エントリポイント（メインスレッド確保、更新ループ、メニュー配線）
 internal/model/                  Snapshot / SourceStatus / WindowStatus など共通型
 internal/config/                 設定の読み書き・既定値・保存先解決
 internal/provider/               Provider インタフェース
@@ -330,8 +330,8 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 ### 5.5 設定ファイル
 
 保存先は `os.UserConfigDir()` 基準:
-- macOS: `~/Library/Application Support/usage-battery/config.json`
-- Windows: `%AppData%\usage-battery\config.json`
+- macOS: `~/Library/Application Support/usagebat/config.json`
+- Windows: `%AppData%\usagebat\config.json`
 
 初回起動時に既定値で自動生成する。
 

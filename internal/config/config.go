@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/yutat23/usage-battery/internal/model"
+	"github.com/yutat23/usagebat/internal/model"
 )
 
 // DisplayMode selects what the tray icon draws.
@@ -210,7 +210,7 @@ func Path() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "usage-battery", "config.json"), nil
+	return filepath.Join(dir, "usagebat", "config.json"), nil
 }
 
 // Load reads the config, creating it with defaults when absent. A malformed

@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yutat23/usage-battery/internal/model"
+	"github.com/yutat23/usagebat/internal/model"
 )
 
 func TestDefaultShowsBothServicesAndShortestLimit(t *testing.T) {

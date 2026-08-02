@@ -1,4 +1,4 @@
-module github.com/yutat23/usage-battery
+module github.com/yutat23/usagebat
 
 go 1.25.6
 

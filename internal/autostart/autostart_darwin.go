@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const launchAgentName = "dev.yutat23.usage-battery.plist"
+const launchAgentName = "dev.yutat23.usagebat.plist"
 
 // Supported reports whether this OS has an autostart backend.
 func Supported() bool { return true }
@@ -38,10 +38,7 @@ func Set(enabled bool) error {
 		return err
 	}
 	if !enabled {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		return nil
+		return removeIfPresent(path)
 	}
 
 	exe, err := os.Executable()
@@ -56,7 +53,7 @@ func Set(enabled bool) error {
 	}
 
 	// Rename keeps launchd from ever observing a partially written plist.
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".usage-battery-*.plist")
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".usagebat-*.plist")
 	if err != nil {
 		return err
 	}
@@ -87,6 +84,13 @@ func launchAgentPath() (string, error) {
 	return filepath.Join(home, "Library", "LaunchAgents", launchAgentName), nil
 }
 
+func removeIfPresent(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 func launchAgentPlist(exe string) string {
 	escape := strings.NewReplacer(
 		"&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&apos;",
@@ -96,7 +100,7 @@ func launchAgentPlist(exe string) string {
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.yutat23.usage-battery</string>
+  <string>dev.yutat23.usagebat</string>
   <key>ProgramArguments</key>
   <array><string>` + escape + `</string></array>
   <key>RunAtLoad</key>

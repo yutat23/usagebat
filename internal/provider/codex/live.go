@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yutat23/usage-battery/internal/config"
-	"github.com/yutat23/usage-battery/internal/version"
+	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/version"
 )
 
 // liveRateLimits asks Codex's own app server for the same account snapshot the
@@ -54,7 +54,7 @@ func liveRateLimits(ctx context.Context, bin, home string) (*rateLimits, error) 
 		"id": 1, "method": "initialize",
 		"params": map[string]any{
 			"clientInfo": map[string]string{
-				"name": "usage-battery", "title": "usage-battery", "version": version.Value,
+				"name": "usagebat", "title": "usagebat", "version": version.String(),
 			},
 			"capabilities": map[string]any{},
 		},

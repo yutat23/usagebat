@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/yutat23/usage-battery/internal/config"
-	"github.com/yutat23/usage-battery/internal/model"
+	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/model"
 )
 
 func testPalette() Palette { return PaletteFrom(config.Default().Colors) }
@@ -198,11 +198,11 @@ func TestParseHex(t *testing.T) {
 }
 
 // TestWritePreview dumps the artwork so the layouts can be eyeballed. It is a
-// no-op unless USAGE_BATTERY_PREVIEW_DIR is set.
+// no-op unless USAGEBAT_PREVIEW_DIR is set.
 func TestWritePreview(t *testing.T) {
-	dir := os.Getenv("USAGE_BATTERY_PREVIEW_DIR")
+	dir := os.Getenv("USAGEBAT_PREVIEW_DIR")
 	if dir == "" {
-		t.Skip("set USAGE_BATTERY_PREVIEW_DIR to dump preview images")
+		t.Skip("set USAGEBAT_PREVIEW_DIR to dump preview images")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
