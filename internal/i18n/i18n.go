@@ -45,6 +45,7 @@ var messages = map[string][2]string{
 	"launchAtStartup": {"Launch at startup", "OS起動時に自動起動"},
 	"refreshNow":      {"Refresh now", "今すぐ更新"},
 	"openConfig":      {"Open config file…", "設定ファイルを開く…"},
+	"viewOnGitHub":    {"View on GitHub…", "GitHubで見る…"},
 	"quit":            {"Quit", "終了"},
 	"language":        {"Language / 言語", "言語 / Language"},
 	"systemDefault":   {"System default", "システム設定"},
@@ -174,11 +175,11 @@ func (p Printer) ResetNotification(count int, expires, now time.Time) (string, s
 			count, remaining, when.Month(), when.Day(), when.Format("15:04"))
 		return p.T("resetTitle"), body
 	}
-	unit := "reset"
+	unit, verb := "reset", "expires"
 	if count != 1 {
-		unit = "resets"
+		unit, verb = "resets", "expire"
 	}
-	body := fmt.Sprintf("%d banked %s expire %s\nExpires %s", count, unit, remaining,
+	body := fmt.Sprintf("%d banked %s %s %s\nExpires %s", count, unit, verb, remaining,
 		when.Format("Jan 2 at 15:04"))
 	return p.T("resetTitle"), body
 }

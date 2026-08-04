@@ -81,7 +81,8 @@ Click the menu-bar item on macOS, or right-click the tray icon on Windows. The m
 - open the configuration file;
 - enable **Launch at startup**;
 - enable banked-reset expiration notifications; and
-- switch between system-default, English, and Japanese UI text.
+- switch between system-default, English, and Japanese UI text; and
+- see the running version and open the project on GitHub.
 
 By default, usagebat selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CXMO` is a Codex monthly limit.
 
@@ -167,6 +168,8 @@ Notifications are enabled by default at seven days and 24 hours before the earli
 
 Each reset and threshold is notified only once. Deduplication state is stored separately in `state.json`; changing languages does not resend an alert. macOS uses the app bundle icon and native User Notifications. Windows uses a native WinRT toast registered under the `usagebat` AppUserModelID and does not invoke PowerShell.
 
+The Windows toast schema can only point at an icon file on disk, so usagebat writes `usagebat-toast-icon.png` next to `usagebat.exe`; deleting the program directory removes it too. If that directory is read-only, the icon goes to `%AppData%\usagebat\` instead.
+
 ### Multiple Codex profiles
 
 `"auto"` uses `$CODEX_HOME`, or `~/.codex` when the environment variable is unset. Additional profiles must be named explicitly:
@@ -205,6 +208,16 @@ usagebat.exe -dump icon.ico
 ```
 
 If a CLI is installed but absent from the menu, set its absolute executable path in the configuration file. Menu-bar apps often inherit a smaller `PATH` than an interactive terminal.
+
+Banked-reset notifications only fire when a credit is genuinely near expiry, and each one is sent once. To see one on demand, send a test notification through the same path the real alert uses:
+
+```sh
+# Windows — also prints the toast registration Windows draws the icon from
+usagebat.exe -notify-test
+
+# macOS — notifications are delivered only from the installed app bundle
+/Applications/usagebat.app/Contents/MacOS/usagebat -notify-test
+```
 
 ## Building from source
 

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/yutat23/usagebat/internal/model"
 	"github.com/yutat23/usagebat/internal/provider"
 	"github.com/yutat23/usagebat/internal/tray"
+	"github.com/yutat23/usagebat/internal/version"
 )
 
 func TestDisplayCellsUseShortestLimitPerService(t *testing.T) {
@@ -81,6 +83,37 @@ func TestJapaneseMenuIncludesBankedResetAndLanguage(t *testing.T) {
 	}
 }
 
+// The about section is the only place the running version is visible, so a
+// bug report can name it without the reporter digging for a terminal.
+func TestMenuShowsVersionAndHomepage(t *testing.T) {
+	menu := buildMenu(config.Default(), &model.Snapshot{}, time.Now(), i18n.New("en"))
+
+	var versionRow, homepage *tray.Item
+	for i, item := range menu {
+		switch {
+		case strings.HasPrefix(item.Title, "usagebat "):
+			versionRow = &menu[i]
+		case item.ID == idHomepage:
+			homepage = &menu[i]
+		}
+	}
+	if versionRow == nil {
+		t.Fatalf("menu has no version row: %+v", menu)
+	}
+	if !versionRow.Disabled {
+		t.Error("the version row is a heading, not something to click")
+	}
+	if versionRow.Title != "usagebat "+version.String() {
+		t.Errorf("version row = %q, want the running version", versionRow.Title)
+	}
+	if homepage == nil {
+		t.Fatalf("menu has no homepage item: %+v", menu)
+	}
+	if homepage.Tooltip != homepageURL || homepage.Disabled {
+		t.Errorf("homepage item = %+v, want a clickable link to %s", *homepage, homepageURL)
+	}
+}
+
 func TestRebuildCreatesOnlyInstalledProviders(t *testing.T) {
 	cfg := config.Default()
 	dir := t.TempDir()
@@ -99,20 +132,21 @@ func TestRebuildCreatesOnlyInstalledProviders(t *testing.T) {
 }
 
 func TestShouldDetachOnlyInteractiveDefaultRun(t *testing.T) {
-	if !shouldDetach(false, "", true) {
+	if !shouldDetach(false, false, true) {
 		t.Fatal("an interactive default run should detach")
 	}
 	for _, tc := range []struct {
+		name        string
 		foreground  bool
-		dump        string
+		oneShot     bool
 		interactive bool
 	}{
-		{foreground: true, interactive: true},
-		{dump: "icon.png", interactive: true},
-		{},
+		{name: "foreground", foreground: true, interactive: true},
+		{name: "one-shot (-dump/-notify-test)", oneShot: true, interactive: true},
+		{name: "already detached"},
 	} {
-		if shouldDetach(tc.foreground, tc.dump, tc.interactive) {
-			t.Fatalf("unexpected detach for %+v", tc)
+		if shouldDetach(tc.foreground, tc.oneShot, tc.interactive) {
+			t.Fatalf("unexpected detach for %s", tc.name)
 		}
 	}
 }

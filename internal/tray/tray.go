@@ -75,3 +75,8 @@ type Backend interface {
 
 // New returns the backend for the current platform.
 func New() Backend { return newBackend() }
+
+// NotificationDiagnostics describes the platform state a notification depends
+// on — the registration Windows draws the toast icon from, the bundle identity
+// macOS requires — as lines meant for a human reading terminal output.
+func NotificationDiagnostics() []string { return notificationDiagnostics() }

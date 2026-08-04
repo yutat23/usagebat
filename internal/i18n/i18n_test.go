@@ -39,7 +39,11 @@ func TestJapaneseResetAndNotificationFormatting(t *testing.T) {
 func TestEnglishPluralResetFormatting(t *testing.T) {
 	now := time.Now()
 	_, body := New("en").ResetNotification(2, now.Add(20*time.Hour), now)
-	if !strings.Contains(body, "2 banked resets") {
+	if !strings.Contains(body, "2 banked resets expire") {
 		t.Fatalf("body = %q", body)
+	}
+	_, body = New("en").ResetNotification(1, now.Add(20*time.Hour), now)
+	if !strings.Contains(body, "1 banked reset expires") {
+		t.Fatalf("singular body = %q", body)
 	}
 }

@@ -70,6 +70,7 @@ macOSではメニューバー項目をクリック、Windowsではトレイア�
 - システム言語／英語／日本語
 - OS起動時の自動起動
 - 今すぐ更新、設定ファイルを開く、終了
+- 実行中のバージョン確認とGitHubへのリンク
 
 既定では、各サービスが実際に報告する最短の制限を選択します。`CL5H`はClaude Codeの5時間枠、`CXWK`はCodexの週間枠、`CXMO`はCodexの月間枠です。
 
@@ -98,7 +99,19 @@ Codex CLIのapp-serverへ`account/rateLimits/read`を要求し、Codex `/status`
 }
 ```
 
-通知はresetを消費せず、Codexセッションも作成しません。複数の通知段階を過ぎた状態で起動した場合は、最も緊急な通知を1件だけ表示します。macOSではusagebatアプリのアイコン、WindowsではusagebatのAppUserModelIDと埋め込みアイコンを使用します。
+通知はresetを消費せず、Codexセッションも作成しません。複数の通知段階を過ぎた状態で起動した場合は、最も緊急な通知を1件だけ表示します。macOSではusagebatアプリのアイコン、Windowsでは`usagebat`のAppUserModelIDに登録したアイコンを使用します。
+
+Windowsのトーストはディスク上の画像ファイルしか参照できないため、`usagebat.exe`と同じディレクトリに`usagebat-toast-icon.png`を書き出します。プログラムのディレクトリを削除すれば一緒に消えます。そのディレクトリに書き込めない場合のみ`%AppData%\usagebat\`に置きます。
+
+通知は期限が実際に迫ったときにしか発火せず、同じ内容は一度しか送られません。動作確認したいときは、実際の通知と同じ経路でテスト通知を送れます。
+
+```sh
+# Windows — アイコンの取得元になっているトースト登録情報も表示します
+usagebat.exe -notify-test
+
+# macOS — 通知はインストール済みのアプリバンドルからのみ配信されます
+/Applications/usagebat.app/Contents/MacOS/usagebat -notify-test
+```
 
 ## 設定
 

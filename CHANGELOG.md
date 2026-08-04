@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.5.2 — 2026-08-04
+
+### Added
+
+- Added an about section to the menu showing the running version, with a link to the project on GitHub
+- Added `usagebat -notify-test`, which sends one notification through the same path and wording the banked-reset alert uses and prints the platform state behind it
+- Added console output for one-shot runs on Windows, where the tray binary is linked as a GUI application and `-dump`, `-notify-test`, and `-version` previously printed nowhere
+
+### Changed
+
+- Moved the Windows toast icon next to the executable, so deleting the program directory removes it; a read-only install directory still falls back to `%AppData%\usagebat\`
+- Outlined the Windows toast icon in white so its near-black casing stays readable on the dark notification surface
+
+### Fixed
+
+- Fixed Windows notifications arriving without an icon: the toast payload now carries an `appLogoOverride` image, which is what Windows actually draws, rather than relying on the AppUserModelId registration alone
+- Fixed English banked-reset notifications reading "1 banked reset expire"
+
 ## 0.5.1 — 2026-08-03
 
 ### Added

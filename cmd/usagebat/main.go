@@ -62,6 +62,8 @@ func main() {
 
 	dump := flag.String("dump", "",
 		"collect once, print the menu to stdout, write the icon to this path, and exit")
+	notifyTest := flag.Bool("notify-test", false,
+		"send one notification through the real path, print diagnostics, and exit")
 	foreground := flag.Bool("foreground", false, "run in the foreground and keep the terminal attached")
 	showVersion := flag.Bool("version", false, "print the version and exit")
 	flag.Usage = func() {
@@ -69,6 +71,12 @@ func main() {
 		flag.PrintDefaults()
 	}
 	flag.Parse()
+	// Every mode below this point either prints and exits or hands the terminal
+	// back; only they need a console, and only they may have to go find one.
+	oneShot := *dump != "" || *notifyTest || *showVersion
+	if oneShot {
+		attachParentConsole()
+	}
 	if *showVersion {
 		fmt.Println("usagebat " + version.String())
 		return
@@ -88,7 +96,7 @@ func main() {
 		fmt.Println("usagebat installed and launched: " + path)
 		return
 	}
-	if shouldDetach(*foreground, *dump, interactiveTerminal()) {
+	if shouldDetach(*foreground, oneShot, interactiveTerminal()) {
 		if err := launchDetached(); err != nil {
 			log.Fatal(err)
 		}
@@ -116,13 +124,22 @@ func main() {
 		return
 	}
 
+	if *notifyTest {
+		if err := a.notifyOnce(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	if err := a.backend.Run(a.onReady, a.onClick); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func shouldDetach(foreground bool, dump string, interactive bool) bool {
-	return !foreground && dump == "" && interactive
+// shouldDetach is false for one-shot runs: those print to the terminal the user
+// is standing in front of, so detaching would throw their output away.
+func shouldDetach(foreground, oneShot, interactive bool) bool {
+	return !foreground && !oneShot && interactive
 }
 
 // dumpOnce runs one collection without starting the tray. It exists so the
@@ -156,6 +173,32 @@ func (a *app) dumpOnce(path string) error {
 	fmt.Printf("\nicon: %d bytes, logical %.0fx%.0f pt -> %s\n",
 		len(icon.Bytes), icon.WidthPt, icon.HeightPt, path)
 	return os.WriteFile(path, icon.Bytes, 0o644)
+}
+
+// notifyOnce sends one notification through the same backend and the same
+// wording the banked-reset alert uses, without starting the tray. The real
+// alert only fires when a credit is genuinely near expiry and then deduplicates
+// itself, so there is otherwise no way to look at one on demand.
+func (a *app) notifyOnce() error {
+	now := time.Now()
+	p := i18n.New(a.cfg.LanguageSetting())
+	title, body := p.ResetNotification(1, now.Add(6*time.Hour), now)
+	fmt.Printf("title: %s\nbody:  %s\n", title, body)
+
+	err := a.backend.Notify(tray.Notification{Title: title, Body: body})
+	// Print the platform state either way: when nothing appears despite a
+	// successful send, the registration is where the answer is.
+	for _, line := range tray.NotificationDiagnostics() {
+		fmt.Println(line)
+	}
+	if err != nil {
+		return err
+	}
+	// macOS hands the request to another queue and returns immediately, so an
+	// exit here would cancel the delivery before it happens.
+	time.Sleep(3 * time.Second)
+	fmt.Println("sent")
+	return nil
 }
 
 // rebuild recreates everything derived from the config.
@@ -377,7 +420,12 @@ const (
 	idLimitPfx      = "limit:"
 	idLanguagePfx   = "language:"
 	idNotifications = "notifications:banked-reset"
+	idHomepage      = "homepage"
 )
+
+// homepageURL is where the about section sends anyone looking for the source,
+// the README, or somewhere to report a problem.
+const homepageURL = "https://github.com/yutat23/usagebat"
 
 func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time, p i18n.Printer) []tray.Item {
 	var items []tray.Item
@@ -515,6 +563,10 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time, p i18n.P
 		tray.Item{Separator: true},
 		tray.Item{ID: idRefresh, Title: p.T("refreshNow")},
 		tray.Item{ID: idConfig, Title: p.T("openConfig")},
+		// The version doubles as the heading of the about section: a tray menu
+		// has no room for a row that only says "About".
+		tray.Item{Title: "usagebat " + version.String(), Disabled: true},
+		tray.Item{ID: idHomepage, Title: p.T("viewOnGitHub"), Indent: 1, Tooltip: homepageURL},
 		tray.Item{ID: idQuit, Title: p.T("quit")},
 	)
 	return items
@@ -633,6 +685,11 @@ func (a *app) onClick(id string) {
 	case id == idConfig:
 		if err := openPath(a.currentConfig().FilePath()); err != nil {
 			log.Printf("open config: %v", err)
+		}
+		return
+	case id == idHomepage:
+		if err := openPath(homepageURL); err != nil {
+			log.Printf("open homepage: %v", err)
 		}
 		return
 	case id == idAutostart:
