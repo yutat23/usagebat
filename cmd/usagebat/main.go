@@ -71,6 +71,9 @@ type app struct {
 	// goroutines and must not touch providers, so they raise this instead and
 	// the update loop acts on it.
 	authoritative atomic.Bool
+	// lastUpdate is when the previous collection ran, in wall-clock terms. It
+	// is only ever touched on the update goroutine.
+	lastUpdate time.Time
 
 	refresh chan struct{}
 	snap    atomic.Pointer[model.Snapshot]
@@ -306,6 +309,8 @@ func (a *app) update() {
 	cfg, providers := a.cfg, a.providers
 	a.mu.Unlock()
 
+	a.noteSleep(time.Now(), time.Duration(cfg.RefreshSeconds)*time.Second)
+
 	// Consumed here rather than in the handler: providers keep unsynchronised
 	// state and are only ever touched on this goroutine.
 	if a.authoritative.Swap(false) {
@@ -334,18 +339,69 @@ func (a *app) update() {
 	if a.notifier == nil || a.notificationsUnavailable {
 		return
 	}
-	for _, event := range a.notifier.Due(snap, cfg.BankedResetNotifications(), p, now) {
+	events := a.notifier.Due(snap, cfg.BankedResetNotifications(), p, now)
+	events = append(events, a.notifier.DueLimits(
+		watchedGauges(cfg, snap, p), cfg.LimitThresholdSettings(), p, now)...)
+	a.deliver(events, now)
+}
+
+// deliver sends the notifications and records the ones that arrived. An event
+// is only marked as sent once the platform accepted it, so a launch from a
+// package that cannot notify does not silently consume the alert.
+func (a *app) deliver(events []notifyengine.Event, now time.Time) {
+	for _, event := range events {
 		if err := a.backend.Notify(tray.Notification{Title: event.Title, Body: event.Body}); err != nil {
 			log.Printf("notification: %v", err)
 			if errors.Is(err, tray.ErrNotificationsUnavailable) {
 				a.notificationsUnavailable = true
-				break
+				return
 			}
 			continue
 		}
 		if err := a.notifier.Mark(event, now); err != nil {
 			log.Printf("notification state: %v", err)
 		}
+	}
+}
+
+// watchedGauges are the limits the icon is drawing, which is how the user has
+// already said which ones they care about.
+func watchedGauges(cfg *config.Config, snap *model.Snapshot, p i18n.Printer) []notifyengine.Gauge {
+	var out []notifyengine.Gauge
+	for _, cell := range displayCells(cfg, snap) {
+		name := cell.Service
+		switch name {
+		case model.SourceClaudeCode:
+			name = "Claude Code"
+		case model.SourceCodex:
+			name = "Codex"
+		}
+		out = append(out, notifyengine.Gauge{
+			Source: cell.Service, Name: name,
+			Window: cell.Status.Window, Status: cell.Status,
+		})
+	}
+	return out
+}
+
+// sleepGap is how far past due a refresh has to be before the machine is
+// assumed to have been asleep rather than merely busy.
+const sleepGap = 2 * time.Minute
+
+// noteSleep spots the gap a suspended machine leaves in the refresh loop.
+//
+// Waking up to figures from before the lid closed is the one time everything
+// on screen is certainly wrong, and it is also the moment somebody looks at
+// it. There is no platform code here: a timer that was itself suspended
+// cannot report that it was, but the wall clock says so plainly.
+func (a *app) noteSleep(now time.Time, interval time.Duration) {
+	previous := a.lastUpdate
+	a.lastUpdate = now
+	if previous.IsZero() || interval <= 0 {
+		return
+	}
+	if now.Sub(previous) > interval+sleepGap {
+		a.authoritative.Store(true)
 	}
 }
 
@@ -514,6 +570,7 @@ const (
 	idSettings      = "settings"
 	idHistory       = "history"
 	idUpdateCheck   = "update-check"
+	idLimitAlerts   = "limit-alerts"
 )
 
 // homepageURL is where the about section sends anyone looking for the source,
@@ -804,6 +861,8 @@ func (a *app) onClick(id string) {
 		a.mutateConfig(func(c *config.Config) error { return c.ToggleHistory() })
 	case id == idUpdateCheck:
 		a.mutateConfig(func(c *config.Config) error { return c.ToggleUpdateCheck() })
+	case id == idLimitAlerts:
+		a.mutateConfig(func(c *config.Config) error { return c.ToggleLimitThresholds() })
 	case strings.HasPrefix(id, idLanguagePfx):
 		language := strings.TrimPrefix(id, idLanguagePfx)
 		a.mutateConfig(func(c *config.Config) error { return c.SetLanguage(language) })

@@ -149,6 +149,11 @@ func (a *app) settingsPage() webui.Page {
 			Kind: webui.KindToggle, Checked: cfg.BankedResetNotifications().Enabled,
 		})
 	}
+	other.Rows = append(other.Rows, webui.Row{
+		ID: idLimitAlerts, Label: p.T("limitAlerts"), Detail: p.LimitAlertDetail(
+			cfg.LimitThresholdSettings().Percents),
+		Kind: webui.KindToggle, Checked: cfg.LimitThresholdSettings().Enabled,
+	})
 	if autostart.Supported() {
 		enabled, err := autostart.Enabled()
 		row := webui.Row{

@@ -72,6 +72,16 @@ type Config struct {
 
 type Notifications struct {
 	BankedResetExpiry BankedResetExpiry `json:"bankedResetExpiry"`
+	LimitThresholds   LimitThresholds   `json:"limitThresholds"`
+}
+
+// LimitThresholds warns when headroom drops past a percentage. Only the limits
+// shown in the icon are watched: choosing what the icon shows is how the user
+// says which limits they care about.
+type LimitThresholds struct {
+	Enabled bool `json:"enabled"`
+	// Percents are remaining-percentage marks, e.g. 50 and 20.
+	Percents []int `json:"percents"`
 }
 
 type BankedResetExpiry struct {
@@ -227,9 +237,14 @@ func Default() *Config {
 			WarnBelow:     50,
 			CriticalBelow: 20,
 		},
-		Notifications: Notifications{BankedResetExpiry: BankedResetExpiry{
-			Enabled: true, ThresholdHours: []int{168, 24},
-		}},
+		Notifications: Notifications{
+			BankedResetExpiry: BankedResetExpiry{
+				Enabled: true, ThresholdHours: []int{168, 24},
+			},
+			LimitThresholds: LimitThresholds{
+				Enabled: true, Percents: []int{50, 20},
+			},
+		},
 		UpdateCheck: UpdateCheck{Enabled: false, IntervalHours: 24},
 		History:     History{Enabled: true, IntervalMinutes: 5, RetentionDays: 30},
 		Sources: Sources{
@@ -505,6 +520,12 @@ func (c *Config) normalise() {
 		c.Notifications.BankedResetExpiry.ThresholdHours,
 		d.Notifications.BankedResetExpiry.ThresholdHours,
 	)
+	// A remaining percentage above 100 can never be crossed and one at zero
+	// fires when the limit is already spent, so neither is worth keeping.
+	c.Notifications.LimitThresholds.Percents = normaliseThresholds(
+		clampPercents(c.Notifications.LimitThresholds.Percents),
+		d.Notifications.LimitThresholds.Percents,
+	)
 	if c.Sources.ClaudeCode.Weights.Output == 0 {
 		c.Sources.ClaudeCode.Weights = d.Sources.ClaudeCode.Weights
 	}
@@ -521,6 +542,16 @@ func (c *Config) normalise() {
 	if c.Sources.Codex.TimeoutSeconds <= 0 {
 		c.Sources.Codex.TimeoutSeconds = d.Sources.Codex.TimeoutSeconds
 	}
+}
+
+func clampPercents(values []int) []int {
+	var out []int
+	for _, value := range values {
+		if value > 0 && value <= 100 {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func normaliseThresholds(values, defaults []int) []int {
@@ -808,6 +839,21 @@ func (c *Config) BankedResetNotifications() BankedResetExpiry {
 func (c *Config) ToggleBankedResetNotifications() error {
 	c.mu.Lock()
 	c.Notifications.BankedResetExpiry.Enabled = !c.Notifications.BankedResetExpiry.Enabled
+	c.mu.Unlock()
+	return c.Save()
+}
+
+func (c *Config) LimitThresholdSettings() LimitThresholds {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := c.Notifications.LimitThresholds
+	out.Percents = append([]int(nil), out.Percents...)
+	return out
+}
+
+func (c *Config) ToggleLimitThresholds() error {
+	c.mu.Lock()
+	c.Notifications.LimitThresholds.Enabled = !c.Notifications.LimitThresholds.Enabled
 	c.mu.Unlock()
 	return c.Save()
 }

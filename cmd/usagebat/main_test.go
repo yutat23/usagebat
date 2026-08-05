@@ -244,6 +244,29 @@ func TestRefreshAsksProvidersForLiveFigures(t *testing.T) {
 	}
 }
 
+// Waking a laptop is the one moment everything on screen is certainly stale,
+// and also the moment somebody looks at it.
+func TestSleepGapAsksForLiveFigures(t *testing.T) {
+	const interval = time.Minute
+	a := &app{}
+
+	now := time.Now()
+	a.noteSleep(now, interval)
+	if a.authoritative.Load() {
+		t.Fatal("the first collection has no previous one to compare against")
+	}
+
+	a.noteSleep(now.Add(interval+time.Second), interval)
+	if a.authoritative.Load() {
+		t.Fatal("a refresh running slightly late is not a suspended machine")
+	}
+
+	a.noteSleep(now.Add(2*time.Hour), interval)
+	if !a.authoritative.Load() {
+		t.Fatal("a two-hour gap should be treated as a sleep and fetch live figures")
+	}
+}
+
 // stubBackend records what the tray was told to do.
 type stubBackend struct {
 	mu     sync.Mutex

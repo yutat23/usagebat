@@ -184,7 +184,7 @@ func allRows(page webui.Page) []webui.Row {
 func TestSettingsPageRowsAreAllHandled(t *testing.T) {
 	known := map[string]bool{
 		idConfig: true, idAutostart: true, idNotifications: true,
-		idHistory: true, idUpdateCheck: true,
+		idHistory: true, idUpdateCheck: true, idLimitAlerts: true,
 	}
 	prefixes := []string{idModePfx, idSourcePfx, idLimitPfx, idLanguagePfx}
 

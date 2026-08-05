@@ -65,6 +65,7 @@ var messages = map[string][2]string{
 	"english":         {"English", "English"},
 	"japanese":        {"日本語", "日本語"},
 	"notifications":   {"Banked reset expiry notifications", "banked resetの期限切れ通知"},
+	"limitAlerts":     {"Warn when a limit runs low", "残量が少なくなったら通知"},
 	"weekly":          {"Weekly", "週間"},
 	"monthly":         {"Monthly", "月間"},
 	"noData":          {"usagebat: no data", "usagebat：データなし"},
@@ -194,6 +195,30 @@ func (p Printer) ResetNotification(count int, expires, now time.Time) (string, s
 	body := fmt.Sprintf("%d banked %s %s %s\nExpires %s", count, unit, verb, remaining,
 		when.Format("Jan 2 at 15:04"))
 	return p.T("resetTitle"), body
+}
+
+// LimitAlertDetail explains which limits are watched and at what marks.
+func (p Printer) LimitAlertDetail(percents []int) string {
+	marks := make([]string, 0, len(percents))
+	for _, percent := range percents {
+		marks = append(marks, fmt.Sprintf("%d%%", percent))
+	}
+	joined := strings.Join(marks, ", ")
+	if p.Japanese() {
+		return fmt.Sprintf("アイコンに表示している枠のみ。残り %s で通知します。", joined)
+	}
+	return fmt.Sprintf("Only the limits shown in the icon, at %s left.", joined)
+}
+
+// LimitWarning announces that a limit is running low.
+func (p Printer) LimitWarning(name string, w model.Window, remaining float64) (string, string) {
+	window := p.WindowTitle(w)
+	if p.Japanese() {
+		return fmt.Sprintf("%s の残りが少なくなっています", name),
+			fmt.Sprintf("%s枠の残りは %.0f%% です", window, remaining)
+	}
+	return fmt.Sprintf("%s is running low", name),
+		fmt.Sprintf("%.0f%% left on the %s limit", remaining, window)
 }
 
 // Weekdays are the heatmap's row labels, Sunday first.
