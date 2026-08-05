@@ -84,7 +84,9 @@ Codex CLIのapp-serverへ`account/rateLimits/read`を要求し、Codex `/status`
 
 ### Claude Code
 
-現在のClaude Codeが`~/.claude.json`へ保存する利用率キャッシュから、5時間・週間枠とリセット時刻を取得します。互換用に`claude -p "/usage" --output-format json`も試し、どちらも利用できない場合のみローカル履歴から推定します。推定値には「（推定）」と表示します。
+現在のClaude Codeが`~/.claude.json`へ保存する利用率キャッシュから、5時間・週間枠とリセット時刻を取得します。`claude -p "/usage" --output-format json`を直接叩くこともでき、メニューの「今すぐ更新」はこちらを使います。キャッシュはClaude Code自身が最後にサービスと通信したときの値なので、明示的な更新では実測を取りに行きます。
+
+**表示する利用率はすべてサービスの報告値です。** 報告されない期間は推定せず`?`と表示します。Claudeの月次枠を勝手に作ることもしません。`~/.claude/projects`のトークン集計は引き続き読みますが、期間ごとのトークン量を表示するためだけに使います。
 
 ## banked resetの期限通知
 

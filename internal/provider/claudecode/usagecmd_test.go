@@ -40,9 +40,6 @@ func TestParseUsageOutput(t *testing.T) {
 	if !session.Known || session.UsedPercent != 51 {
 		t.Errorf("session = %+v, want 51%% used", session)
 	}
-	if session.Estimated {
-		t.Error("a reported figure must not be flagged as an estimate")
-	}
 	week := got[model.WindowWeekly]
 	if !week.Known || week.UsedPercent != 6 {
 		t.Errorf("weekly = %+v, want 6%% used", week)
@@ -71,7 +68,7 @@ func TestParseUsageIgnoresUnrelatedPercentages(t *testing.T) {
 }
 
 func TestParseUsageUnknownFormatYieldsNothing(t *testing.T) {
-	// Better to fall back to estimation than to guess at an unfamiliar layout.
+	// Better to report nothing than to guess at an unfamiliar layout.
 	if got := parseUsage("Usage: 51 percent of session consumed", time.Now()); len(got) != 0 {
 		t.Errorf("got %+v, want nothing recognised", got)
 	}
@@ -134,7 +131,7 @@ func providerWithReported(t *testing.T, dir string, now time.Time, reported map[
 	return p
 }
 
-func TestReportedFiguresBeatEstimates(t *testing.T) {
+func TestReportedFiguresAreShownUnflagged(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
 	writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
@@ -146,7 +143,7 @@ func TestReportedFiguresBeatEstimates(t *testing.T) {
 	st := p.Collect(now)
 
 	got := st.Windows[model.Window5h]
-	if got.UsedPercent != 51 || got.Estimated {
+	if got.UsedPercent != 51 {
 		t.Errorf("5h = %+v, want the reported 51%% unflagged", got)
 	}
 	// Claude has no monthly subscription window, so one must not be invented.
@@ -250,8 +247,8 @@ func TestStaleReportedReadingIsDiscarded(t *testing.T) {
 	p.reportedAt = now.Add(-time.Duration(p.cfg.UsageCommand.StaleAfterSeconds+1) * time.Second)
 
 	st := p.Collect(now)
-	if got := st.Windows[model.Window5h]; !got.Estimated {
-		t.Errorf("5h = %+v, want the stale reading dropped in favour of an estimate", got)
+	if got, ok := st.Windows[model.Window5h]; ok {
+		t.Errorf("5h = %+v, want the stale reading dropped rather than shown", got)
 	}
 }
 
@@ -267,12 +264,14 @@ func TestUsageCommandDisabledSkipsExec(t *testing.T) {
 
 	p := New(&c)
 	st := p.Collect(now)
-	if !strings.Contains(st.Note, "usage cache unavailable") {
+	if !strings.Contains(st.Note, "usage cache") {
 		t.Errorf("note = %q, want the missing cache explained", st.Note)
 	}
 }
 
-func TestMissingBinaryFallsBackToEstimation(t *testing.T) {
+// With no cache and no CLI there is nothing to report, and the app says so
+// rather than filling the gap with a number it made up.
+func TestMissingBinaryLeavesTheWindowsUnknown(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
 	writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
@@ -284,13 +283,15 @@ func TestMissingBinaryFallsBackToEstimation(t *testing.T) {
 	c.UsageCommand.Path = filepath.Join(dir, "definitely-not-here")
 
 	st := New(&c).Collect(now)
-	if got := st.Windows[model.Window5h]; !got.Estimated || !got.Known {
-		t.Errorf("5h = %+v, want a usable estimate", got)
+	if got, ok := st.Windows[model.Window5h]; ok {
+		t.Errorf("5h = %+v, want no figure at all", got)
 	}
-	// The reason has to surface, or the user cannot tell a real figure from a
-	// guess.
-	if st.Note == "" || st.Note == "reported by /usage" {
-		t.Errorf("note = %q, want it to explain the fallback", st.Note)
+	// The reason has to surface, and the measured tallies still stand.
+	if !strings.Contains(st.Note, "no figures") {
+		t.Errorf("note = %q, want it to explain that nothing was reported", st.Note)
+	}
+	if st.Tokens[model.Window5h].Output != 100 {
+		t.Errorf("token tally lost: %+v", st.Tokens[model.Window5h])
 	}
 }
 

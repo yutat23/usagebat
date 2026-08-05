@@ -712,9 +712,6 @@ func windowLine(w model.Window, st model.WindowStatus, now time.Time, p i18n.Pri
 	if r := p.FormatReset(st.ResetsAt, now); r != "" {
 		b.WriteString("  ·  " + r)
 	}
-	if st.Estimated {
-		b.WriteString("  " + p.T("estimated"))
-	}
 	return b.String()
 }
 

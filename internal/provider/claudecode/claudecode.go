@@ -1,14 +1,19 @@
-// Package claudecode reports Claude Code limit usage from two sources.
+// Package claudecode reports Claude Code limit usage.
 //
-// Current Claude Code releases cache the real percentages returned by the
-// service in ~/.claude.json, so that cache is the primary source. Older CLI
-// releases exposed the same figures through `claude -p /usage`; that remains a
-// compatibility fallback.
+// Every percentage it reports comes from the service. Current Claude Code
+// releases cache the figures the service returned in ~/.claude.json, so that
+// cache is the primary source; `claude -p /usage` asks for them directly,
+// which is what a refresh the user asked for does, and what older CLI
+// releases needed.
 //
-// Whatever /usage does not report, if the user configured a corresponding
-// budget, is estimated from the per-response token accounting in
-// ~/.claude/projects/**/*.jsonl, compared against user-calibrated budgets.
-// Estimated values are flagged as such; reported ones are not.
+// A window the service does not report is left unknown rather than guessed
+// at. Earlier versions estimated it from local token accounting against a
+// budget the user calibrated by hand, which asked people to tune a number in
+// order to be told something the service already knew.
+//
+// The per-response tallies in ~/.claude/projects/**/*.jsonl are still read,
+// but only to report how many tokens went through each window; they never
+// decide a percentage.
 package claudecode
 
 import (
@@ -46,7 +51,7 @@ type Provider struct {
 	seen    map[string]time.Time
 
 	// Last successful /usage reading, kept so a failed run reuses it briefly
-	// instead of making the battery jump to the estimate and back.
+	// instead of the battery dropping to "?" and back over one failed run.
 	reported     map[model.Window]model.WindowStatus
 	reportedAt   time.Time
 	lastAttempt  time.Time
@@ -146,13 +151,13 @@ func (p *Provider) Collect(now time.Time) model.SourceStatus {
 	case len(reported) > 0:
 		st.Note = "reported by /usage"
 	case cacheErr != nil && p.reportErr != "":
-		st.Note = "estimated — usage cache unavailable: " + cacheErr.Error() + "; /usage: " + p.reportErr
+		st.Note = "no figures: usage cache " + cacheErr.Error() + "; /usage: " + p.reportErr
 	case cacheErr != nil:
-		st.Note = "estimated — usage cache unavailable: " + cacheErr.Error()
+		st.Note = "no figures: usage cache " + cacheErr.Error()
 	case p.reportErr != "":
-		st.Note = "estimated — /usage unavailable: " + p.reportErr
+		st.Note = "no figures: /usage " + p.reportErr
 	default:
-		st.Note = "estimated from local transcripts"
+		st.Note = "no figures reported"
 	}
 
 	dir := p.projectsDir()
@@ -167,49 +172,21 @@ func (p *Provider) Collect(now time.Time) model.SourceStatus {
 	}
 
 	for _, w := range model.AllWindows {
-		start, resets, label := p.windowBounds(w, now)
-		tok, weighted := p.sum(start, now)
+		start, _, _ := p.windowBounds(w, now)
+		tok, _ := p.sum(start, now)
 		st.Tokens[w] = tok
 
-		// A real figure always beats an estimate; estimation only fills gaps.
+		// Only what the service reported. A window it says nothing about stays
+		// absent, and the battery draws "?" for it, which is the truth.
 		if r, ok := reported[w]; ok {
 			st.Windows[w] = r
-			continue
-		}
-		// Claude subscriptions expose session and weekly limits. Do not invent a
-		// monthly quota from transcript totals. If Anthropic ever reports one via
-		// /usage, the reported branch above will still display it.
-		if w == model.WindowMonthly {
-			continue
-		}
-		if estimated := p.estimate(w, label, resets, weighted); estimated.Known {
-			st.Windows[w] = estimated
 		}
 	}
 
-	if len(reported) == 0 && len(p.entries) == 0 && st.Err == "" {
-		st.Err = "no usage data: /usage unavailable and no transcripts found"
+	if len(reported) == 0 && st.Err == "" {
+		st.Err = "no usage data: the usage cache and /usage are both unavailable"
 	}
 	return st
-}
-
-// estimate derives a window status from weighted token accounting.
-func (p *Provider) estimate(w model.Window, label string, resets time.Time, weighted float64) model.WindowStatus {
-	ws := model.WindowStatus{Window: w, Estimated: true, ResetsAt: resets}
-	limit := p.cfg.Limits[string(w)]
-	if limit <= 0 {
-		ws.Detail = fmt.Sprintf("%s · no limit configured (weighted %s)",
-			label, model.FormatCount(int64(weighted)))
-		return ws
-	}
-	ws.Known = true
-	ws.UsedPercent = weighted / float64(limit) * 100
-	if ws.UsedPercent > 100 {
-		ws.UsedPercent = 100
-	}
-	ws.Detail = fmt.Sprintf("%s · weighted %s / %s",
-		label, model.FormatCount(int64(weighted)), model.FormatCount(limit))
-	return ws
 }
 
 // collectReported polls /usage, subject to throttling, and returns the figures
@@ -239,7 +216,7 @@ func (p *Provider) collectReported(now time.Time) map[model.Window]model.WindowS
 		return nil
 	}
 	if age := now.Sub(p.reportedAt); age > time.Duration(uc.StaleAfterSeconds)*time.Second {
-		// Too old to stand behind; fall back to estimation rather than showing a
+		// Too old to stand behind. Reporting nothing is better than showing a
 		// stale number as if it were current.
 		p.reported = nil
 		return nil

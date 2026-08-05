@@ -21,8 +21,9 @@ func TestDefaultShowsBothServicesAndShortestLimit(t *testing.T) {
 		got[0] != model.SourceClaudeCode || got[1] != model.SourceCodex {
 		t.Fatalf("default display sources = %v, want both services", got)
 	}
-	if _, ok := c.Sources.ClaudeCode.Limits[string(model.WindowMonthly)]; ok {
-		t.Fatal("Claude must not have a fabricated monthly limit by default")
+	// Claude percentages come from the service; there is no budget to calibrate.
+	if c.Sources.ClaudeCode.Weights.Output <= 0 {
+		t.Fatal("token weighting is still needed for the tallies")
 	}
 }
 

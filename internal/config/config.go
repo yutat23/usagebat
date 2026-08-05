@@ -147,18 +147,19 @@ type Sources struct {
 }
 
 // ClaudeCode configures the local service-usage cache, the legacy /usage
-// fallback, and the transcript estimator that fills remaining gaps.
+// fallback, and the transcript scan behind the token tallies.
 type ClaudeCode struct {
 	Enabled      bool         `json:"enabled"`
 	UsageCommand UsageCommand `json:"usageCommand"`
 	// UsageCacheFile is Claude Code's locally cached service usage response.
 	// Empty means ~/.claude.json.
-	UsageCacheFile string           `json:"usageCacheFile"`
-	ProjectsDir    string           `json:"projectsDir"`
-	WeeklyMode     string           `json:"weeklyMode"`  // rolling | calendar
-	MonthlyMode    string           `json:"monthlyMode"` // calendar | rolling
-	Weights        Weights          `json:"weights"`
-	Limits         map[string]int64 `json:"limits"`
+	UsageCacheFile string `json:"usageCacheFile"`
+	ProjectsDir    string `json:"projectsDir"`
+	// WeeklyMode and MonthlyMode bound the periods the token tallies are summed
+	// over. They no longer decide any percentage.
+	WeeklyMode  string  `json:"weeklyMode"`  // rolling | calendar
+	MonthlyMode string  `json:"monthlyMode"` // calendar | rolling
+	Weights     Weights `json:"weights"`
 }
 
 // UsageCommand configures polling of `claude -p /usage`.
@@ -251,14 +252,6 @@ func Default() *Config {
 						"sonnet": 1,
 						"haiku":  0.2,
 					},
-				},
-				// Weighted-token budgets. Anthropic does not publish real limits and
-				// does not expose remaining quota locally, so these are calibration
-				// seeds: set them by comparing the weighted figures in the menu
-				// against what /usage reports. 0 disables estimation for a window.
-				Limits: map[string]int64{
-					"5h":     10_000_000,
-					"weekly": 60_000_000,
 				},
 			},
 			Codex: Codex{

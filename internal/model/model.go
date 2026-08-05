@@ -65,9 +65,6 @@ type WindowStatus struct {
 	UsedPercent float64
 	// ResetsAt is the zero time when unknown.
 	ResetsAt time.Time
-	// Estimated marks a value derived from local token accounting rather than
-	// reported by the service.
-	Estimated bool
 	// Detail is a short menu line explaining where the number came from.
 	Detail string
 }

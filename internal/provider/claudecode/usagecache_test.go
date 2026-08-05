@@ -18,7 +18,7 @@ func TestParseCachedUsage(t *testing.T) {
 		Utilization: &seven, ResetsAt: "2026-08-06T08:59:59.648202+09:00",
 	}
 	got := parseCachedUsage(cache, now)
-	if st := got[model.Window5h]; !st.Known || st.UsedPercent != 71 || st.Estimated {
+	if st := got[model.Window5h]; !st.Known || st.UsedPercent != 71 {
 		t.Errorf("5h = %+v, want reported 71%%", st)
 	}
 	if st := got[model.WindowWeekly]; !st.Known || st.UsedPercent != 8 {

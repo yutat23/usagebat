@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -53,16 +54,14 @@ func appendLines(t *testing.T, path string, lines ...string) {
 	}
 }
 
-// testConfig exercises the estimator alone. The /usage path is switched off so
-// tests never shell out to the real CLI.
-func testConfig(dir string, limits map[string]int64) *config.ClaudeCode {
+// testConfig exercises the transcript tallies alone. The /usage path is
+// switched off so tests never shell out to the real CLI, and the cache file
+// does not exist, so nothing reports a percentage.
+func testConfig(dir string) *config.ClaudeCode {
 	c := config.Default().Sources.ClaudeCode
 	c.ProjectsDir = dir
 	c.UsageCacheFile = filepath.Join(dir, ".claude.json")
 	c.UsageCommand.Enabled = false
-	if limits != nil {
-		c.Limits = limits
-	}
 	return &c
 }
 
@@ -74,7 +73,7 @@ func TestWeightingUsesModelAndTokenKind(t *testing.T) {
 	writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
 		assistantLine(now.Add(-time.Minute), "m1", "r1", "claude-sonnet-5", 1000, 100, 1000, 10000))
 
-	st := New(testConfig(dir, nil)).Collect(now)
+	st := New(testConfig(dir)).Collect(now)
 	tok := st.Tokens[model.Window5h]
 	if got := tok.Weighted; got != 3750 {
 		t.Errorf("weighted = %v, want 3750", got)
@@ -87,7 +86,7 @@ func TestWeightingUsesModelAndTokenKind(t *testing.T) {
 	dir2 := t.TempDir()
 	writeTranscript(t, filepath.Join(dir2, "proj"), "a.jsonl",
 		assistantLine(now.Add(-time.Minute), "m1", "r1", "claude-opus-5", 1000, 100, 1000, 10000))
-	st2 := New(testConfig(dir2, nil)).Collect(now)
+	st2 := New(testConfig(dir2)).Collect(now)
 	if got := st2.Tokens[model.Window5h].Weighted; got != 3750*5 {
 		t.Errorf("opus weighted = %v, want %v", got, 3750*5)
 	}
@@ -101,7 +100,7 @@ func TestDeduplicatesResponsesAcrossTranscripts(t *testing.T) {
 	writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl", line)
 	writeTranscript(t, filepath.Join(dir, "proj"), "b.jsonl", line)
 
-	st := New(testConfig(dir, nil)).Collect(now)
+	st := New(testConfig(dir)).Collect(now)
 	if got := st.Tokens[model.Window5h].Output; got != 100 {
 		t.Errorf("output = %d, want 100 counted once", got)
 	}
@@ -113,7 +112,7 @@ func TestIncrementalReadDoesNotDoubleCount(t *testing.T) {
 	path := writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
 		assistantLine(now.Add(-2*time.Minute), "m1", "r1", "claude-sonnet-5", 0, 100, 0, 0))
 
-	p := New(testConfig(dir, nil))
+	p := New(testConfig(dir))
 	if got := p.Collect(now).Tokens[model.Window5h].Output; got != 100 {
 		t.Fatalf("first pass output = %d, want 100", got)
 	}
@@ -136,7 +135,7 @@ func TestPartialLineIsNotConsumedUntilComplete(t *testing.T) {
 	path := writeTranscript(t, projDir, "a.jsonl",
 		assistantLine(now.Add(-2*time.Minute), "m1", "r1", "claude-sonnet-5", 0, 100, 0, 0))
 
-	p := New(testConfig(dir, nil))
+	p := New(testConfig(dir))
 	p.Collect(now)
 
 	// Simulate catching Claude Code mid-write: a line without its newline yet.
@@ -171,7 +170,7 @@ func TestActiveBlockExcludesOlderSessions(t *testing.T) {
 		assistantLine(now.Add(-time.Minute), "m2", "r2", "claude-sonnet-5", 0, 50, 0, 0),
 	)
 
-	st := New(testConfig(dir, nil)).Collect(now)
+	st := New(testConfig(dir)).Collect(now)
 	if got := st.Tokens[model.Window5h].Output; got != 150 {
 		t.Errorf("5h output = %d, want 150 (yesterday's block excluded)", got)
 	}
@@ -179,60 +178,30 @@ func TestActiveBlockExcludesOlderSessions(t *testing.T) {
 	if got := st.Tokens[model.WindowWeekly].Output; got != 1149 {
 		t.Errorf("weekly output = %d, want 1149", got)
 	}
-	if r := st.Windows[model.Window5h].ResetsAt; r.Before(now) || r.After(now.Add(blockDuration)) {
-		t.Errorf("5h reset %v is not within the next five hours", r)
-	}
 }
 
-func TestNoLimitConfiguredYieldsUnknownNotZero(t *testing.T) {
-	dir := t.TempDir()
-	now := time.Now()
-	writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
-		assistantLine(now.Add(-time.Minute), "m1", "r1", "claude-sonnet-5", 0, 100, 0, 0))
-
-	st := New(testConfig(dir, map[string]int64{"5h": 0, "weekly": 0, "monthly": 0})).Collect(now)
-	for _, w := range model.AllWindows {
-		if st.Windows[w].Known {
-			t.Errorf("%s should be unknown without a configured limit", w)
-		}
-	}
-	// The weighted figure still has to be reported, since that is what the user
-	// calibrates the limit against.
-	if st.Tokens[model.Window5h].Weighted == 0 {
-		t.Error("weighted tokens missing")
-	}
-}
-
-func TestUsageIsCappedAtFull(t *testing.T) {
+// Every percentage comes from the service. Transcripts say how many tokens
+// went through, which is not the same thing as how much of a limit is left,
+// and guessing one from the other asked the user to calibrate a budget by hand.
+func TestUnreportedWindowsStayUnknown(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()
 	writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
 		assistantLine(now.Add(-time.Minute), "m1", "r1", "claude-sonnet-5", 0, 1_000_000, 0, 0))
 
-	st := New(testConfig(dir, map[string]int64{"5h": 1000})).Collect(now)
-	got := st.Windows[model.Window5h]
-	if !got.Known || got.UsedPercent != 100 {
-		t.Errorf("used = %v, want it clamped to 100", got.UsedPercent)
-	}
-	if got.RemainingPercent() != 0 {
-		t.Errorf("remaining = %v, want 0", got.RemainingPercent())
-	}
-}
-
-func TestEstimatedValuesAreFlagged(t *testing.T) {
-	dir := t.TempDir()
-	now := time.Now()
-	writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
-		assistantLine(now.Add(-time.Minute), "m1", "r1", "claude-sonnet-5", 0, 100, 0, 0))
-
-	st := New(testConfig(dir, nil)).Collect(now)
-	for _, w := range []model.Window{model.Window5h, model.WindowWeekly} {
-		if !st.Windows[w].Estimated {
-			t.Errorf("%s must be flagged as an estimate", w)
+	st := New(testConfig(dir)).Collect(now)
+	for _, w := range model.AllWindows {
+		if _, ok := st.Windows[w]; ok {
+			t.Errorf("%s has a figure the service never reported: %+v", w, st.Windows[w])
 		}
 	}
-	if _, ok := st.Windows[model.WindowMonthly]; ok {
-		t.Error("Claude monthly usage must not be estimated")
+	// The tallies are real data and stay, because they are measured rather
+	// than inferred.
+	if st.Tokens[model.Window5h].Output != 1_000_000 {
+		t.Errorf("token tally lost: %+v", st.Tokens[model.Window5h])
+	}
+	if !strings.Contains(st.Note, "no figures") {
+		t.Errorf("note = %q, want it to say nothing was reported", st.Note)
 	}
 }
 
@@ -246,12 +215,9 @@ func TestNonAssistantLinesAreIgnored(t *testing.T) {
 		assistantLine(now.Add(-time.Minute), "m1", "r1", "claude-sonnet-5", 0, 100, 0, 0),
 	)
 
-	st := New(testConfig(dir, nil)).Collect(now)
+	st := New(testConfig(dir)).Collect(now)
 	if got := st.Tokens[model.Window5h].Output; got != 100 {
 		t.Errorf("output = %d, want 100", got)
-	}
-	if st.Err != "" {
-		t.Errorf("unexpected error: %s", st.Err)
 	}
 }
 
@@ -277,7 +243,7 @@ func TestDeletedTranscriptsLeaveNoOffsetBehind(t *testing.T) {
 	path := writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
 		assistantLine(now.Add(-time.Minute), "m1", "r1", "claude-sonnet-5", 0, 100, 0, 0))
 
-	p := New(testConfig(dir, nil))
+	p := New(testConfig(dir))
 	p.Collect(now)
 	if _, ok := p.offsets[path]; !ok {
 		t.Fatal("the transcript was never recorded")
@@ -311,7 +277,7 @@ func TestBlockStartsOnTheLocalHourInOffsetZones(t *testing.T) {
 	writeTranscript(t, filepath.Join(dir, "proj"), "a.jsonl",
 		assistantLine(first, "m1", "r1", "claude-sonnet-5", 0, 100, 0, 0))
 
-	p := New(testConfig(dir, nil))
+	p := New(testConfig(dir))
 	p.Collect(now)
 	start, resets := p.activeBlock(now)
 	if got := start.In(kolkata); got.Minute() != 0 || got.Hour() != 14 {

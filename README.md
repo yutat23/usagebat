@@ -104,7 +104,9 @@ When the Codex app server provides earned rate-limit resets, usagebat shows the 
 
 Current Claude Code versions cache service-reported utilization in `~/.claude.json`. usagebat reads the 5-hour and weekly figures, reset times, and any additional limits actually present in that cache. A cached value older than 15 minutes is not treated as current by default.
 
-For compatibility with older versions, it can also try `claude -p "/usage" --output-format json`. If neither source provides a current percentage, configured 5-hour and weekly limits can be estimated from local transcript token accounting. Estimated rows are clearly marked with `(est)`. usagebat does not invent a monthly Claude limit.
+It can also ask `claude -p "/usage" --output-format json` directly, which is what **Refresh now** does: the cache is only as fresh as the last time Claude Code itself talked to the service, and a refresh you asked for is worth a live reading.
+
+Every percentage comes from the service. A window it does not report is shown as `?` rather than guessed at, and usagebat does not invent a monthly Claude limit. The per-response token tallies in `~/.claude/projects` are still read, but only to report how many tokens went through each window.
 
 ## Configuration
 

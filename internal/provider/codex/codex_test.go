@@ -100,9 +100,6 @@ func TestMonthlyWindowFromLongPeriod(t *testing.T) {
 	if !ok || !got.Known {
 		t.Fatalf("monthly missing: %+v (%s)", st.Windows, st.Err)
 	}
-	if got.Estimated {
-		t.Error("Codex figures are reported, not estimated")
-	}
 	if want := time.Unix(1788229667, 0); !got.ResetsAt.Equal(want) {
 		t.Errorf("ResetsAt = %v, want %v", got.ResetsAt, want)
 	}

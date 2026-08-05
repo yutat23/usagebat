@@ -18,7 +18,7 @@ macOS のメニューバー / Windows のタスクトレイに **ドット絵の
 | ウィンドウ (window) | 上限の集計期間。`5h` / `weekly` / `monthly` |
 | used% | そのウィンドウで消費済みの割合 |
 | remaining% | `100 - used%`。バッテリーに表示するのはこちら |
-| 加重トークン | モデル係数・種別係数を掛けて正規化したトークン量（Claude Code の推定に使用） |
+| 加重トークン | モデル係数・種別係数を掛けて正規化したトークン量（表示用の参考値） |
 
 ## 3. データ取得方式（重要）
 
@@ -100,7 +100,7 @@ macOS のメニューバー / Windows のタスクトレイに **ドット絵の
 キャッシュを一次データ源とし、`staleAfterSeconds` より古ければ採用しない。
 
 古いCLIとの互換性のため `claude -p /usage --output-format json` のパーサーも残す。
-現在のCLIはこの呼び出しに契約枠を返さないため、認識不能なら推定へ落とす。
+現在のCLIはこの呼び出しに契約枠を返さないため、認識不能なら値なしとして扱う。
 
 `sources.claudeCode.usageCommand` で設定：
 
@@ -125,55 +125,56 @@ macOS のメニューバー / Windows のタスクトレイに **ドット絵の
 出た場合は**使用率が高い方**を採用する（実際に効く制約はそちら）。
 
 **認識できない行は捨てる。** 出力フォーマットが変わったら「データなし」に落として
-推定にフォールバックする。読めない文字列から数字をひねり出して間違った残量を出すより良い。
+値なしとして扱う。読めない文字列から数字をひねり出して間違った残量を出すより良い。
 
 **スロットルと劣化**: `minIntervalSeconds` 未満の再実行はスキップする（メニューの
 「Refresh now」を連打してもプロセスが増えない）。実行に失敗した場合は
-`staleAfterSeconds` 以内なら直前の成功値を再利用し、それを超えたら破棄して推定に戻す。
+`staleAfterSeconds` 以内なら直前の成功値を再利用し、それを超えたら破棄して値なしとする。
 
-### 3.3 Claude Code — 実測キャッシュが埋めない 5h / weekly は推定する
+### 3.3 Claude Code — 報告されない枠は推定しない
 
 実測キャッシュは通常 5h と weekly を返す（プランによる）。標準の月次枠はないので、
 **monthly をトランスクリプトから作り出さない**。将来キャッシュが実際に monthly グループを
-返した場合のみ、実測枠として扱う。キャッシュが無い・古い場合の 5h / weekly の穴は
-**トランスクリプトのトークン消費量からの推定**で埋める。
+返した場合のみ、実測枠として扱う。
+
+**キャッシュも `/usage` も値を返さない枠は、推定せず `?` を表示する。**
+
+0.6.0 より前は、トランスクリプトの加重トークンを**ユーザーが手で較正した上限値**と
+比べて 5h / weekly を推定していた。これは廃止した。理由は2つある。
+
+- 較正値も係数も Anthropic の非公開仕様に対する当て推量であり、実測と大きくずれた
+  （実運用で「推定 0% 残 vs 実測 51% 残」という乖離が出た）
+- サービスが正確な値を返すようになった今、**ユーザーに数値を較正させてまで
+  推定を維持する理由がない**
+
+トランスクリプトの走査自体は続ける。ただし用途は**期間ごとのトークン量の表示**だけで、
+利用率の判断には一切使わない。
 
 - 入力: `~/.claude/projects/**/*.jsonl` の `type:"assistant"` 行にある `message.usage`
   （`input_tokens` / `output_tokens` / `cache_creation_input_tokens` / `cache_read_input_tokens`）
   と `timestamp` / `message.model`
 - 重複排除: `message.id` + `requestId` の組（セッション再開・サイドチェーンで同一行が複数ファイルに出る）
-- 加重トークン:
+- 加重トークン: メニューと使用状況グラフに出す参考値
   ```
   weighted = modelWeight(model) × ( in×1 + out×5 + cacheCreate×1.25 + cacheRead×0.1 )
   modelWeight: opus=5, sonnet=1, haiku=0.2, その他=1
   ```
-- `weighted / limit` を used% とする。`limit` は **設定ファイルでユーザーが較正する値**
 
-> ⚠️ **この値は推定である。** 係数も上限値も Anthropic の非公開仕様であり、
-> 実際の利用率とはズレる。UI 上では推定であることを明示し（メニューに `(est)` を付す）、
-> メニューに加重トークンの実数を出して実測キャッシュと突き合わせて較正できるようにする。
-> `limit` に `0` を設定したウィンドウは推定を諦め、バッテリーに `?` を表示する。
-
-**既定の limit 値の根拠**: 実機の 1 か月分のトランスクリプトを集計したところ、
-5h ブロックの加重トークンは最大 8.2M（中央値 ≈ 1.2M）。これを踏まえた初期値を置く（下記 6 章）。
-
-なお実運用で実測値と突き合わせたところ、この既定値では 5h が過小
-（推定 0% 残 vs 実測 51% 残）だった。**推定はあくまで穴埋めであり、
-キャッシュが新鮮な限り実測値が常に優先される。**
+`weeklyMode` / `monthlyMode` は、このトークン集計の期間境界を決めるためだけに残る。
 
 ### 3.4 ソースの優先順位
 
 ウィンドウごとに次の順で決める：
 
-1. Claude Codeのローカル利用量キャッシュ（`Estimated=false`）
-2. 旧CLIの `/usage` が返した実測値またはその直前値（`staleAfterSeconds` 以内）
-3. トークン加重からの推定（`Estimated=true`、メニューに `(est)`）
+1. ユーザーが明示的に更新を要求した場合は `/usage` を直接実行する
+2. Claude Codeのローカル利用量キャッシュ
+3. `/usage` が返した実測値またはその直前値（`staleAfterSeconds` 以内）
 4. どれも無ければ `?`
 
+すべてサービスの報告値であり、推定は存在しない。
 トークン実数（in / out / cache / weighted）は 1〜4 のどれでも常に表示する。
-実測データなので推定の可否とは独立している。
 
-### 3.5 ウィンドウ境界の決め方（Claude Code の推定時）
+### 3.5 ウィンドウ境界の決め方（Claude Code のトークン集計）
 
 | ウィンドウ | 既定 | 備考 |
 |---|---|---|
@@ -266,8 +267,6 @@ Claude Code  —  reported by /usage      ← 見出し（無効項目）
       in 229 · out 158.0K · cache 17.7M · weighted 15.2M
   Weekly    94% left  ·  resets in 3d17h (Thu 08:59)
       in 331 · out 228.4K · cache 22.2M · weighted 21.1M
-  Monthly   92% left  ·  resets Sep 1 00:00  (est)   ← /usage が返さないので推定
-      in 229 · out 158.0K · cache 17.7M · weighted 15.2M
 ──────────
 Codex (~/.codex-work)  —  plan: team    ← ホームごとに独立した見出し
   Monthly  100% left  ·  resets Aug 30 12:47
@@ -325,7 +324,7 @@ internal/appbundle/              go install版からmacOS .appを安全に生成
 internal/i18n/                   OS言語判定・英語／日本語カタログ
 internal/notify/                 banked reset期限判定・永続的な重複防止
 internal/provider/               Provider インタフェース
-internal/provider/claudecode/    トランスクリプト集計による推定
+internal/provider/claudecode/    利用量キャッシュ・/usage・トークン集計
 internal/provider/codex/         Codexライブ制限 + rollout jsonlフォールバック
 internal/render/font.go          3×5 ピクセルフォント
 internal/render/battery.go       スプライト描画 / ストリップ・スタックレイアウト
@@ -399,10 +398,7 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
       "usageCommand": { "enabled": true, "path": "", "timeoutSeconds": 20,
                         "minIntervalSeconds": 30, "staleAfterSeconds": 900 },
       "weights": { "output": 5, "cacheCreation": 1.25, "cacheRead": 0.1,
-                   "models": { "opus": 5, "sonnet": 1, "haiku": 0.2 } },
-      // /usage が一時的に取れない場合の 5h / weekly 推定用加重トークン上限。
-      // 実測(5hブロック最大8.2M)を踏まえた初期値。0 にすると「?」表示になる。
-      "limits": { "5h": 10000000, "weekly": 60000000 }
+                   "models": { "opus": 5, "sonnet": 1, "haiku": 0.2 } }
     },
     "codex": {
       "enabled": true,
@@ -429,4 +425,4 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 
 - Linux 対応（`tray.Backend` の実装を足せば入る構造にはする）
 - 通常の利用枠残量が閾値を割ったときの通知（banked reset期限通知は対象内）
-- Claude Code に存在しない月次枠の推定
+- Claude Code に存在しない月次枠の推定（そもそも推定自体を行わない）
