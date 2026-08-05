@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"strings"
@@ -307,6 +308,14 @@ func (s *Server) handler() http.Handler {
 		}
 		s.renderPage(w)
 	})
+	mux.HandleFunc("/app.js", func(w http.ResponseWriter, r *http.Request) {
+		if !s.authorize(w, r) {
+			return
+		}
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		io.WriteString(w, appJS)
+	})
 	mux.HandleFunc("/apply", func(w http.ResponseWriter, r *http.Request) {
 		if !s.authorize(w, r) {
 			return
@@ -320,7 +329,15 @@ func (s *Server) handler() http.Handler {
 			return
 		}
 		if id := strings.TrimSpace(r.PostForm.Get("id")); id != "" && s.Activate != nil {
+			// Activate returns once the change is saved, so whichever answer
+			// goes back below renders the new state rather than the old one.
 			s.Activate(id)
+		}
+		if r.Header.Get("X-Requested-With") == "fetch" {
+			// The script fetches the page itself afterwards; sending it a
+			// redirect here would just make it fetch twice.
+			w.WriteHeader(http.StatusNoContent)
+			return
 		}
 		// Post-redirect-get: reloading after a change must not repeat it. The
 		// target is fixed rather than taken from the request, so a crafted

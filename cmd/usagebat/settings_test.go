@@ -185,6 +185,7 @@ func TestSettingsPageRowsAreAllHandled(t *testing.T) {
 	known := map[string]bool{
 		idConfig: true, idAutostart: true, idNotifications: true,
 		idHistory: true, idUpdateCheck: true, idLimitAlerts: true,
+		idRefresh: true,
 	}
 	prefixes := []string{idModePfx, idSourcePfx, idLimitPfx, idLanguagePfx}
 

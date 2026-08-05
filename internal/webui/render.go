@@ -10,6 +10,9 @@ import (
 //go:embed page.html
 var pageHTML string
 
+//go:embed app.js
+var appJS string
+
 // pageTemplate is parsed once. A failure here is a bug in the shipped
 // template, not something a user can cause, so it panics at startup rather
 // than failing the first time somebody opens the settings.
@@ -21,10 +24,12 @@ func (s *Server) renderPage(w http.ResponseWriter) {
 		page = s.Render()
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// The page is built from local state, never embeds anything remote, and
-	// carries no script: every control is a form submission.
+	// The page is built from local state and never embeds anything remote. The
+	// only script it may run is the one this server serves: no inline handlers,
+	// nothing from anywhere else.
 	w.Header().Set("Content-Security-Policy",
-		"default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'")
+		"default-src 'none'; script-src 'self'; connect-src 'self'; "+
+			"style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'")
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 

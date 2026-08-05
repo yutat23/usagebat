@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"github.com/yutat23/usagebat/internal/autostart"
 	"github.com/yutat23/usagebat/internal/config"
@@ -35,15 +36,42 @@ func (a *app) openSettings() {
 // applySetting handles a row the user clicked on the settings page.
 //
 // It runs the same handler the tray menu uses, so a setting behaves
-// identically wherever it is changed, and it runs synchronously: the redirect
-// that follows has to render the value that was just saved.
+// identically wherever it is changed, and it returns only once the change has
+// taken effect: the page the browser draws next has to show the new state, not
+// the one it already had.
 func (a *app) applySetting(id string) {
-	if id == idQuit {
+	switch id {
+	case idQuit:
 		// The page has no quit row. Nothing that arrives over a socket should
 		// be able to close the app, whatever else it got hold of.
 		return
+	case idRefresh:
+		a.refreshAndWait()
+		return
 	}
 	a.onClick(id)
+}
+
+// refreshWait bounds how long the settings page will sit on a refresh. A
+// Claude reading goes out to the CLI, which has its own timeout.
+const refreshWait = 30 * time.Second
+
+// refreshAndWait asks the update loop for a collection and waits for it to
+// land. Providers are only ever touched on that goroutine, so this cannot
+// simply collect here; it watches for the snapshot to be replaced instead.
+func (a *app) refreshAndWait() {
+	before := a.snap.Load()
+	a.onClick(idRefresh)
+
+	deadline := time.Now().Add(refreshWait)
+	for time.Now().Before(deadline) {
+		if a.snap.Load() != before {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	// Timed out: the page still renders, just with what was already there.
+	log.Printf("settings: refresh did not finish within %s", refreshWait)
 }
 
 // settingsPage builds the screen from the live config and the last snapshot.
@@ -188,9 +216,10 @@ func (a *app) settingsPage() webui.Page {
 		}
 	}
 
-	other.Rows = append(other.Rows, webui.Row{
-		ID: idConfig, Label: p.T("openConfig"), Kind: webui.KindAction,
-	})
+	other.Rows = append(other.Rows,
+		webui.Row{ID: idRefresh, Label: p.T("refreshNow"), Kind: webui.KindAction},
+		webui.Row{ID: idConfig, Label: p.T("openConfig"), Kind: webui.KindAction},
+	)
 	add(other)
 
 	return page

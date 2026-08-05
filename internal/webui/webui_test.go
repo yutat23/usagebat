@@ -230,8 +230,10 @@ func TestApplyRejectsGet(t *testing.T) {
 	}
 }
 
-// The page carries no script, so the policy can forbid one outright.
-func TestPageForbidsScripts(t *testing.T) {
+// The only script the page may run is the one this server serves. Nothing
+// inline, nothing from anywhere else, and no network beyond the loopback
+// origin the page was fetched from.
+func TestPageAllowsOnlyItsOwnScript(t *testing.T) {
 	_, raw, client := testServer(t)
 	client.Get(raw)
 	resp, err := client.Get(strings.Split(raw, "?")[0])
@@ -239,13 +241,86 @@ func TestPageForbidsScripts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
+
 	policy := resp.Header.Get("Content-Security-Policy")
-	if !strings.Contains(policy, "default-src 'none'") {
-		t.Errorf("content-security-policy = %q", policy)
+	for _, want := range []string{"default-src 'none'", "script-src 'self'", "connect-src 'self'"} {
+		if !strings.Contains(policy, want) {
+			t.Errorf("content-security-policy = %q, missing %q", policy, want)
+		}
+	}
+	if strings.Contains(policy, "script-src 'unsafe-inline'") {
+		t.Error("inline scripts are allowed; the page does not need them")
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if strings.Contains(string(body), "<script") || strings.Contains(string(body), "onchange=") {
-		t.Error("the page grew a script; the policy above would block it")
+	for _, forbidden := range []string{"onchange=", "onclick=", "onsubmit="} {
+		if strings.Contains(string(body), forbidden) {
+			t.Errorf("page carries an inline handler (%s), which the policy blocks", forbidden)
+		}
+	}
+}
+
+// The script is only useful if the forms it enhances still work without it.
+func TestFormsWorkWithoutTheScript(t *testing.T) {
+	s, raw, client := testServer(t)
+	s.Activate = func(string) {}
+	client.Get(raw)
+
+	page := get(t, client, "http://"+s.Addr()+"/")
+	if !strings.Contains(page, `action="/apply"`) || !strings.Contains(page, "data-async") {
+		t.Fatal("the rows are no longer plain forms marked for enhancement")
+	}
+	// A browser without the script posts the form and follows a redirect.
+	resp, err := client.PostForm("http://"+s.Addr()+"/apply", url.Values{"id": {"history"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("status = %d, want a redirect for a plain form post", resp.StatusCode)
+	}
+}
+
+// The script fetches the page itself afterwards; a redirect would make it
+// fetch twice.
+func TestFetchCallersGetNoContent(t *testing.T) {
+	s, raw, client := testServer(t)
+	s.Activate = func(string) {}
+	client.Get(raw)
+
+	req, err := http.NewRequest(http.MethodPost, "http://"+s.Addr()+"/apply",
+		strings.NewReader("id=history"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("X-Requested-With", "fetch")
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 for a fetch caller", resp.StatusCode)
+	}
+}
+
+// The script is served from the same guarded origin as the page.
+func TestScriptNeedsTheSession(t *testing.T) {
+	s, raw, client := testServer(t)
+
+	resp, err := http.Get("http://" + s.Addr() + "/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403 without a session", resp.StatusCode)
+	}
+
+	client.Get(raw)
+	body := get(t, client, "http://"+s.Addr()+"/app.js")
+	if !strings.Contains(body, "data-async") {
+		t.Errorf("served script does not look like the enhancement:\n%s", body)
 	}
 }
 

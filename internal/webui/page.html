@@ -6,8 +6,10 @@
 <meta name="referrer" content="no-referrer">
 <title>{{.Title}}</title>
 <style>
-/* Everything is a form submission, so the page needs no script at all and can
-   keep a content-security-policy that forbids one outright. */
+/* Every control is a form submission and works without a script. app.js only
+   makes the round trip quieter: it swaps the page in place rather than
+   reloading, which keeps the scroll position and saves redrawing every chart
+   to flip one checkbox. */
 :root {
   color-scheme: light dark;
   --bg: #ffffff;
@@ -177,6 +179,10 @@ figure.chart svg { display: block; width: 100%; height: auto; }
   .only-dark { display: block; }
 }
 footer { margin-top: 2.5rem; color: var(--dim); font-size: .85rem; }
+/* Only while a change is in flight. Without it a refresh that goes to the
+   service looks like nothing happened for several seconds. */
+body.busy main { opacity: .55; transition: opacity .15s ease-in; }
+body.busy { cursor: progress; }
 </style>
 </head>
 <body>
@@ -199,6 +205,7 @@ footer { margin-top: 2.5rem; color: var(--dim); font-size: .85rem; }
   </footer>
   {{end}}
 </main>
+<script src="/app.js" defer></script>
 </body>
 </html>
 
@@ -218,13 +225,13 @@ footer { margin-top: 2.5rem; color: var(--dim); font-size: .85rem; }
         {{if .Href}}
           <a class="action" href="{{.Href}}" target="_blank" rel="noopener noreferrer">{{.Label}}</a>
         {{else}}
-          <form method="post" action="/apply">
+          <form method="post" action="/apply" data-async>
             <input type="hidden" name="id" value="{{.ID}}">
             <button class="action" type="submit">{{.Label}}</button>
           </form>
         {{end}}
       {{else}}
-        <form method="post" action="/apply">
+        <form method="post" action="/apply" data-async>
           <input type="hidden" name="id" value="{{.ID}}">
           <button class="choice{{if .Indent}} indent{{end}}" type="submit"
                   role="{{if eq .Kind 1}}radio{{else}}switch{{end}}"
