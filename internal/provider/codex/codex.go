@@ -34,6 +34,7 @@ const scanFiles = 8
 // to be used last.
 type Provider struct {
 	home           string
+	short          string
 	label          string
 	path           string
 	timeoutSeconds int
@@ -46,19 +47,27 @@ type Provider struct {
 // still returns a single provider, so the menu can say why instead of silently
 // omitting Codex.
 func Providers(cfg *config.Codex) []*Provider {
-	homes := resolveHomes(cfg)
-	if len(homes) == 0 {
+	resolved := resolveProfiles(cfg)
+	if len(resolved) == 0 {
 		return []*Provider{{label: "Codex", hint: unconfiguredHint()}}
 	}
-	out := make([]*Provider, 0, len(homes))
-	for _, h := range homes {
+	out := make([]*Provider, 0, len(resolved))
+	for _, r := range resolved {
+		label := r.profile.Label
+		if label == "" {
+			label = labelFor(r.home)
+		}
 		out = append(out, &Provider{
-			home: h, label: labelFor(h), path: cfg.Path,
+			home: r.home, label: label, short: r.profile.Icon(), path: cfg.Path,
 			timeoutSeconds: cfg.TimeoutSeconds, live: liveRateLimits,
 		})
 	}
 	return out
 }
+
+// Short is the abbreviation the icon draws for this profile, empty when the
+// user has not named one.
+func (p *Provider) Short() string { return p.short }
 
 // labelFor names a source. The default home needs no qualifier; anything else
 // is shown with its path so two profiles are never confused for each other.
@@ -150,6 +159,7 @@ func (p *Provider) Collect(now time.Time) model.SourceStatus {
 	st := model.SourceStatus{
 		ID:        p.ID(),
 		Name:      p.label,
+		Short:     p.short,
 		Windows:   map[model.Window]model.WindowStatus{},
 		Tokens:    map[model.Window]model.Tokens{},
 		UpdatedAt: now,
@@ -307,10 +317,15 @@ func defaultHome() (string, error) {
 // deliberately does not go hunting for other directories: a second home is a
 // second account, and adopting one the user never named would put someone
 // else's quota on their menu bar.
-func resolveHomes(cfg *config.Codex) []string {
-	var out []string
+type resolvedProfile struct {
+	home    string
+	profile config.Profile
+}
+
+func resolveProfiles(cfg *config.Codex) []resolvedProfile {
+	var out []resolvedProfile
 	seen := map[string]bool{}
-	add := func(dir string) {
+	add := func(dir string, profile config.Profile) {
 		if dir == "" {
 			return
 		}
@@ -322,17 +337,17 @@ func resolveHomes(cfg *config.Codex) []string {
 			return
 		}
 		seen[abs] = true
-		out = append(out, abs)
+		out = append(out, resolvedProfile{home: abs, profile: profile})
 	}
 
-	for _, h := range cfg.Homes {
-		if h == "auto" {
+	for _, profile := range cfg.Profiles {
+		if profile.Path == "auto" || profile.Path == "" {
 			if def, err := defaultHome(); err == nil {
-				add(def)
+				add(def, profile)
 			}
 			continue
 		}
-		add(h)
+		add(profile.Path, profile)
 	}
 	return out
 }
@@ -372,7 +387,7 @@ func unconfiguredHint() string {
 	if len(found) == 0 {
 		return base
 	}
-	return base + " — add " + strings.Join(found, ", ") + " to sources.codex.homes"
+	return base + " — add " + strings.Join(found, ", ") + " to sources.codex.profiles"
 }
 
 func expandHome(p string) string {

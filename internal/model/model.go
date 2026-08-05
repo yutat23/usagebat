@@ -127,6 +127,10 @@ func (t Tokens) Total() int64 {
 type SourceStatus struct {
 	ID   string // "claude-code" / "codex"
 	Name string // display name, may include the directory a value came from
+	// Short is the one or two characters the icon has room for when several
+	// accounts of one service are drawn. Empty means the caller should derive
+	// one from Name.
+	Short string
 	// Err is non-empty when the provider failed; Windows may still be partly filled.
 	Err     string
 	Windows map[Window]WindowStatus

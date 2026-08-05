@@ -74,6 +74,24 @@ macOSではメニューバー項目をクリック、Windowsではトレイア�
 
 既定では、各サービスが実際に報告する最短の制限を選択します。`CL5H`はClaude Codeの5時間枠、`CXWK`はCodexの週間枠、`CXMO`はCodexの月間枠です。
 
+複数アカウントを使っている場合、`displaySources`にサービス名を書くと最も逼迫したアカウント1つに集約されます。アカウントIDを個別に書くと、それぞれを別々に表示します。
+
+```json
+"displaySources": ["claude-code", "codex:codex-work-1a2b"],
+"sources": {
+  "codex": {
+    "profiles": [
+      { "path": "~/.codex-work", "label": "Work", "short": "W" },
+      { "path": "~/.codex-home", "label": "Home", "short": "H" }
+    ]
+  }
+}
+```
+
+`short`はアイコンに描く1〜2文字で、`CL`/`CX`の代わりに表示されます（サービスの区別は色が担います）。メニューとグラフには`label`を使います。
+
+macOSのメニューバーはアカウントの数だけ横に伸びます。Windowsのトレイアイコンは16ドット四方しかないため、**最大3本まで**とし、超える場合は残量の少ないものを優先します。常に1つだけ見たい場合は`icon.windowsLayout`を`single`にしてください。
+
 ## 値の取得元
 
 ### Codex
@@ -135,7 +153,8 @@ usagebat.exe -notify-test
 | `refreshSeconds` | 更新間隔。既定60秒、最小5秒 |
 | `colors.light` / `colors.dark` | テーマ別配色 |
 | `notifications.bankedResetExpiry` | 期限通知と通知タイミング |
-| `sources.codex.homes` | Codexプロファイルの場所 |
+| `sources.codex.profiles` | 追跡するCodexアカウントと表示名 |
+| `notifications.limitThresholds` | 残量が閾値を割ったときの通知 |
 
 ## 自動起動
 

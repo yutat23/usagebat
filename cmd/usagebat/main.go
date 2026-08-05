@@ -11,7 +11,9 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -500,10 +502,11 @@ func (a *app) renderIcon(cfg *config.Config, snap *model.Snapshot) tray.IconData
 		}
 	}
 
+	square := capSquareCells(cells)
 	data, err := render.ICO(func(size int) *image.RGBA {
 		o := opts
 		o.Scale = 1
-		base := render.SquareCells(cells, o, geometry.WindowsLayout).Image
+		base := render.SquareCells(square, o, geometry.WindowsLayout).Image
 		return render.ResizeNearest(base, size)
 	})
 	if err != nil {
@@ -518,12 +521,20 @@ func (a *app) renderIcon(cfg *config.Config, snap *model.Snapshot) tray.IconData
 // can coexist in the same icon.
 func displayCells(cfg *config.Config, snap *model.Snapshot) []render.Cell {
 	var cells []render.Cell
-	for _, family := range cfg.EnabledDisplaySources() {
-		if !snapshotHasFamily(snap, family) {
+	for _, selected := range cfg.EnabledDisplaySources() {
+		if !snapshotHasFamily(snap, selected) {
 			continue
 		}
+		// A selection can name a whole service or one account of it. Naming an
+		// account draws it on its own instead of folding it into the family's
+		// most constrained figure.
+		family, profile := selected, ""
+		if source, ok := findSource(snap, selected); ok {
+			family = sourceFamily(selected)
+			profile = profileAbbreviation(source)
+		}
 		aggregated := &model.Snapshot{Sources: snap.Sources}
-		aggregated.AggregateSources(model.AllWindows, []string{family})
+		aggregated.AggregateSources(model.AllWindows, []string{selected})
 		auto, windows := cfg.LimitSelection(family)
 		if auto {
 			windows = nil
@@ -540,10 +551,83 @@ func displayCells(cfg *config.Config, snap *model.Snapshot) []render.Cell {
 		for _, w := range windows {
 			st := aggregated.Icon[w]
 			st.Window = w
-			cells = append(cells, render.Cell{Service: family, Period: w.Label(), Status: st})
+			cells = append(cells, render.Cell{
+				Service: family, Period: w.Label(), Profile: profile, Status: st,
+			})
 		}
 	}
 	return cells
+}
+
+// squareCellLimit is how many bars fit in a Windows tray icon and still read
+// as bars. The grid is sixteen dots square, so a fourth bar leaves three dots
+// each and the outlines disappear.
+const squareCellLimit = 3
+
+// capSquareCells keeps the Windows icon legible. Past the limit it shows the
+// most constrained cells rather than shrinking every bar into a stripe:
+// somebody watching four accounts is watching for the one in trouble.
+func capSquareCells(cells []render.Cell) []render.Cell {
+	if len(cells) <= squareCellLimit {
+		return cells
+	}
+	ranked := append([]render.Cell(nil), cells...)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		return ranked[i].Status.RemainingPercent() < ranked[j].Status.RemainingPercent()
+	})
+	return ranked[:squareCellLimit]
+}
+
+// findSource looks for a selection that names one account exactly.
+func findSource(snap *model.Snapshot, id string) (model.SourceStatus, bool) {
+	for _, src := range snap.Sources {
+		if src.ID == id {
+			return src, true
+		}
+	}
+	return model.SourceStatus{}, false
+}
+
+// sourceFamily strips the account off a source id: "codex:work-1a2b" is Codex.
+func sourceFamily(id string) string {
+	if family, _, found := strings.Cut(id, ":"); found {
+		return family
+	}
+	return id
+}
+
+// profileAbbreviation is the one or two characters the icon has room for.
+//
+// A configured short name wins. Failing that the account's own name is
+// trimmed down, which is the part of a path that distinguishes it:
+// "Codex (~/.codex-work)" abbreviates to WO, not to CO, because CO is what
+// every Codex directory would give.
+func profileAbbreviation(src model.SourceStatus) string {
+	if src.Short != "" {
+		return firstRunes(src.Short, 2)
+	}
+	name := src.Name
+	if open := strings.IndexRune(name, '('); open >= 0 {
+		if close := strings.IndexRune(name[open:], ')'); close > 0 {
+			name = name[open+1 : open+close]
+		}
+	}
+	name = filepath.Base(name)
+	name = strings.TrimPrefix(name, ".")
+	// Directories are conventionally named for the tool and then the account,
+	// so whatever follows the first dash is the distinguishing part.
+	if dash := strings.IndexRune(name, '-'); dash >= 0 && dash+1 < len(name) {
+		name = name[dash+1:]
+	}
+	return firstRunes(name, 2)
+}
+
+func firstRunes(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) > n {
+		runes = runes[:n]
+	}
+	return string(runes)
 }
 
 func snapshotHasFamily(snap *model.Snapshot, family string) bool {

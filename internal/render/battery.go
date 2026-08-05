@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"math"
+	"strings"
 
 	"github.com/yutat23/usagebat/internal/config"
 	"github.com/yutat23/usagebat/internal/model"
@@ -113,6 +114,9 @@ type Cell struct {
 	Service string
 	Period  string
 	Label   string
+	// Profile abbreviates the account when more than one of a service is
+	// drawn, so two Codex cells are not identical squares.
+	Profile string
 	Status  model.WindowStatus
 }
 
@@ -259,6 +263,12 @@ func stripCellCanvas(item Cell, o Options) *canvas {
 func cellLabels(item Cell) (string, string) {
 	if item.Period == "" {
 		return "", item.Label
+	}
+	// With a profile there is no room for both the two-letter service and the
+	// two-character period, so the profile takes the service's place: which
+	// account it is matters more here, and the colour still says the service.
+	if item.Profile != "" {
+		return strings.ToUpper(item.Profile), item.Period
 	}
 	switch item.Service {
 	case model.SourceClaudeCode:

@@ -88,7 +88,23 @@ By default, usagebat selects the shortest limit each service actually reports. L
 
 The icon follows the system bar appearance. `CL` uses a Claude terracotta, `CX` uses a Codex teal, and all period suffixes (`5H`, `WK`, and `MO`) share a neutral high-contrast color. Battery status colors also switch between light and dark variants so warning yellow and other details remain legible.
 
-If a service has multiple configured accounts, the icon uses the account with the least remaining capacity for the selected period. The menu still lists every account separately.
+If a service has multiple configured accounts, naming the service in `displaySources` shows the account with the least remaining capacity — one battery for "how is Codex doing". Naming the accounts instead draws each one:
+
+```json
+"displaySources": ["claude-code", "codex:codex-work-1a2b", "codex:codex-home-3c4d"],
+"sources": {
+  "codex": {
+    "profiles": [
+      { "path": "~/.codex-work", "label": "Work", "short": "W" },
+      { "path": "~/.codex-home", "label": "Home", "short": "H" }
+    ]
+  }
+}
+```
+
+`short` is what the icon has room for; it replaces the `CL`/`CX` prefix, and the colour still says which service it is. The menu and the charts use `label`.
+
+The macOS menu bar grows a cell per account. A Windows tray icon is sixteen dots square, so it draws at most three bars and keeps the most constrained ones; set `icon.windowsLayout` to `single` if you would rather always see just one.
 
 ## Where the numbers come from
 
@@ -134,7 +150,8 @@ Common settings include:
 | `notifications.bankedResetExpiry` | Enable expiry alerts and set threshold hours |
 | `sources.claudeCode.usageCommand.path` | Explicit Claude executable path, if auto-detection fails |
 | `sources.codex.path` | Explicit Codex executable path, if auto-detection fails |
-| `sources.codex.homes` | Codex profile directories |
+| `sources.codex.profiles` | Codex accounts to track, with the names they are shown under |
+| `notifications.limitThresholds` | Warn when headroom drops past a percentage |
 
 The default theme palettes can be customized independently. Changes are picked up while usagebat is running:
 

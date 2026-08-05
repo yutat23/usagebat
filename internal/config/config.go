@@ -200,10 +200,37 @@ type Codex struct {
 	// Path is the Codex CLI to run. Empty means auto-detect.
 	Path           string `json:"path"`
 	TimeoutSeconds int    `json:"timeoutSeconds"`
-	// Homes lists CODEX_HOME directories. "auto" resolves to $CODEX_HOME, or
-	// ~/.codex. Anything else is taken literally. Each home becomes its own
-	// entry in the menu, because separate homes are separate accounts.
-	Homes []string `json:"homes"`
+	// Profiles lists the accounts to track. "auto" resolves to $CODEX_HOME, or
+	// ~/.codex. Anything else is taken literally. Each one becomes its own
+	// entry, because separate homes are separate accounts.
+	Profiles []Profile `json:"profiles"`
+	// Homes is the pre-v7 form, read once so an existing config migrates.
+	Homes []string `json:"homes,omitempty"`
+}
+
+// Profile is one account, with the name it is shown under.
+type Profile struct {
+	// Path is the profile directory. "auto" means the standard location.
+	Path string `json:"path"`
+	// Label names it in menus, charts and notifications. Empty falls back to
+	// the directory name, which is usually a hash nobody can read.
+	Label string `json:"label"`
+	// Short is the one or two characters the icon has room for. Empty derives
+	// one from Label.
+	Short string `json:"short"`
+}
+
+// Icon returns the abbreviation to draw, at most two characters.
+func (p Profile) Icon() string {
+	source := p.Short
+	if source == "" {
+		source = p.Label
+	}
+	runes := []rune(source)
+	if len(runes) > 2 {
+		runes = runes[:2]
+	}
+	return string(runes)
 }
 
 // Default returns the shipped configuration.
@@ -272,7 +299,7 @@ func Default() *Config {
 			Codex: Codex{
 				Enabled:        true,
 				TimeoutSeconds: 15,
-				Homes:          []string{"auto"},
+				Profiles:       []Profile{{Path: "auto"}},
 			},
 		},
 	}
@@ -368,8 +395,22 @@ func (c *Config) migrate(data []byte) bool {
 	if version < 5 {
 		c.migrateLegacyColors()
 	}
+	c.migrateCodexHomes()
 	c.Version = SchemaVersion
 	return true
+}
+
+// migrateCodexHomes turns the v6 list of directories into profiles. The label
+// is left empty so the provider keeps naming them the way it always has;
+// somebody who wants a readable name now has somewhere to put one.
+func (c *Config) migrateCodexHomes() {
+	if len(c.Sources.Codex.Profiles) > 0 || len(c.Sources.Codex.Homes) == 0 {
+		return
+	}
+	for _, home := range c.Sources.Codex.Homes {
+		c.Sources.Codex.Profiles = append(c.Sources.Codex.Profiles, Profile{Path: home})
+	}
+	c.Sources.Codex.Homes = nil
 }
 
 func (c *Config) migrateLegacyColors() {
@@ -481,6 +522,12 @@ func (c *Config) normalise() {
 	if c.History.RetentionDays < 1 {
 		c.History.RetentionDays = 30
 	}
+	// A config that names no profile still tracks the standard location; an
+	// empty list would silently drop Codex off the icon.
+	c.migrateCodexHomes()
+	if len(c.Sources.Codex.Profiles) == 0 {
+		c.Sources.Codex.Profiles = []Profile{{Path: "auto"}}
+	}
 	if c.Icon.DotSize <= 0 {
 		c.Icon.DotSize = 1.2
 	}
@@ -581,6 +628,10 @@ func (c *Config) EnabledDisplaySources() []string {
 	return c.enabledDisplaySourcesLocked()
 }
 
+// enabledDisplaySourcesLocked returns the selections in a stable order: the
+// known families first, in their canonical order, then any account named
+// explicitly. An entry naming one account draws that account on its own
+// instead of folding it into its family's figure.
 func (c *Config) enabledDisplaySourcesLocked() []string {
 	set := map[string]bool{}
 	for _, id := range c.DisplaySources {
@@ -590,6 +641,15 @@ func (c *Config) enabledDisplaySourcesLocked() []string {
 	for _, id := range allDisplaySources {
 		if set[id] {
 			out = append(out, id)
+			delete(set, id)
+		}
+	}
+	// Whatever is left names an account. Config order decides theirs, since
+	// there is no canonical order to fall back on.
+	for _, id := range c.DisplaySources {
+		if set[id] {
+			out = append(out, id)
+			delete(set, id)
 		}
 	}
 	return out

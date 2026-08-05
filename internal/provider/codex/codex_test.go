@@ -55,7 +55,7 @@ func jsonBucket(usedPercent float64, windowMinutes int, resetsAt int64) string {
 // newProvider builds the single provider for one explicit home.
 func newProvider(t *testing.T, home string) *Provider {
 	t.Helper()
-	ps := Providers(&config.Codex{Enabled: true, Homes: []string{home}})
+	ps := Providers(&config.Codex{Enabled: true, Profiles: []config.Profile{{Path: home}}})
 	if len(ps) != 1 {
 		t.Fatalf("got %d providers, want 1", len(ps))
 	}
@@ -129,7 +129,7 @@ func TestEachHomeStaysItsOwnSource(t *testing.T) {
 	writeRollout(t, personal, "2026-08-02", "rollout-personal.jsonl",
 		tokenCount("2026-08-02T05:00:00.000Z", jsonBucket(88, 300, reset), ""))
 
-	ps := Providers(&config.Codex{Enabled: true, Homes: []string{work, personal}})
+	ps := Providers(&config.Codex{Enabled: true, Profiles: []config.Profile{{Path: work}, {Path: personal}}})
 	if len(ps) != 2 {
 		t.Fatalf("got %d providers, want one per home", len(ps))
 	}
@@ -176,12 +176,33 @@ func TestAutoDoesNotAdoptUnnamedProfiles(t *testing.T) {
 	writeRollout(t, home, "2026-08-02", "rollout-a.jsonl",
 		tokenCount("2026-08-02T05:00:00.000Z", jsonBucket(7, 300, time.Now().Unix()), ""))
 
-	homes := resolveHomes(&config.Codex{Homes: []string{"auto"}})
-	if len(homes) != 1 {
-		t.Fatalf("auto resolved to %v, want exactly the configured CODEX_HOME", homes)
+	resolved := resolveProfiles(&config.Codex{Profiles: []config.Profile{{Path: "auto"}}})
+	if len(resolved) != 1 {
+		t.Fatalf("auto resolved to %v, want exactly the configured CODEX_HOME", resolved)
 	}
-	if got := labelFor(homes[0]); got != "Codex" {
+	if got := labelFor(resolved[0].home); got != "Codex" {
 		t.Errorf("the default home needs no qualifier, got %q", got)
+	}
+}
+
+// A named profile is shown under the name the user gave it, not the directory
+// hash the path happens to end in.
+func TestConfiguredLabelIsUsed(t *testing.T) {
+	home := t.TempDir()
+	writeRollout(t, home, "2026-08-02", "rollout-a.jsonl",
+		tokenCount("2026-08-02T05:00:00.000Z", jsonBucket(7, 300, time.Now().Unix()), ""))
+
+	providers := Providers(&config.Codex{Profiles: []config.Profile{
+		{Path: home, Label: "Work", Short: "W"},
+	}})
+	if len(providers) != 1 {
+		t.Fatalf("got %d providers, want one", len(providers))
+	}
+	if got := providers[0].Collect(time.Now()).Name; got != "Work" {
+		t.Errorf("name = %q, want the configured label", got)
+	}
+	if got := providers[0].Short(); got != "W" {
+		t.Errorf("icon abbreviation = %q, want W", got)
 	}
 }
 
@@ -275,7 +296,7 @@ func TestHomesSharingADirectoryNameStayDistinct(t *testing.T) {
 	writeRollout(t, personal, "2026-08-02", "rollout-personal.jsonl",
 		tokenCount("2026-08-02T05:00:00.000Z", jsonBucket(88, 300, reset), ""))
 
-	ps := Providers(&config.Codex{Enabled: true, Homes: []string{work, personal}})
+	ps := Providers(&config.Codex{Enabled: true, Profiles: []config.Profile{{Path: work}, {Path: personal}}})
 	if len(ps) != 2 {
 		t.Fatalf("got %d providers, want one per home", len(ps))
 	}

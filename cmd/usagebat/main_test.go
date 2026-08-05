@@ -12,6 +12,7 @@ import (
 	"github.com/yutat23/usagebat/internal/i18n"
 	"github.com/yutat23/usagebat/internal/model"
 	"github.com/yutat23/usagebat/internal/provider"
+	"github.com/yutat23/usagebat/internal/render"
 	"github.com/yutat23/usagebat/internal/tray"
 	"github.com/yutat23/usagebat/internal/version"
 	"github.com/yutat23/usagebat/internal/webui"
@@ -172,6 +173,89 @@ func TestDisplayCellsUseIndependentExplicitLimits(t *testing.T) {
 	if len(cells) != 2 || cells[0].Service != model.SourceClaudeCode || cells[0].Period != "WK" ||
 		cells[1].Service != model.SourceCodex || cells[1].Period != "MO" {
 		t.Fatalf("independent cells = %+v", cells)
+	}
+}
+
+// twoCodexProfiles is a machine signed in to two Codex accounts.
+func twoCodexProfiles() *model.Snapshot {
+	return &model.Snapshot{Sources: []model.SourceStatus{
+		{ID: "codex:work-1a2b", Name: "Codex (~/.codex-work)", Windows: map[model.Window]model.WindowStatus{
+			model.WindowMonthly: {Known: true, UsedPercent: 30},
+		}},
+		{ID: "codex:home-3c4d", Name: "Codex (~/.codex-home)", Windows: map[model.Window]model.WindowStatus{
+			model.WindowMonthly: {Known: true, UsedPercent: 80},
+		}},
+	}}
+}
+
+// Naming the service folds its accounts into the most constrained figure,
+// which is the right default: one battery for "how is Codex doing".
+func TestServiceSelectionAggregatesItsProfiles(t *testing.T) {
+	cfg := config.Default()
+	cfg.DisplaySources = []string{model.SourceCodex}
+	cfg.DisplayLimits[model.SourceCodex] = config.LimitDisplay{Windows: []string{"monthly"}}
+
+	cells := displayCells(cfg, twoCodexProfiles())
+	if len(cells) != 1 {
+		t.Fatalf("got %d cells, want the two accounts folded into one", len(cells))
+	}
+	if got := cells[0].Status.UsedPercent; got != 80 {
+		t.Errorf("used = %v, want the fuller account's 80", got)
+	}
+	if cells[0].Profile != "" {
+		t.Errorf("an aggregated cell names no account, got %q", cells[0].Profile)
+	}
+}
+
+// Naming the accounts draws them separately, which is the point of tracking
+// more than one.
+func TestProfileSelectionDrawsEachAccount(t *testing.T) {
+	cfg := config.Default()
+	cfg.DisplaySources = []string{"codex:work-1a2b", "codex:home-3c4d"}
+	cfg.DisplayLimits[model.SourceCodex] = config.LimitDisplay{Windows: []string{"monthly"}}
+
+	cells := displayCells(cfg, twoCodexProfiles())
+	if len(cells) != 2 {
+		t.Fatalf("got %d cells, want one per named account", len(cells))
+	}
+	for _, cell := range cells {
+		if cell.Service != model.SourceCodex {
+			t.Errorf("cell service = %q, want the family so the colour still applies", cell.Service)
+		}
+		if cell.Profile == "" {
+			t.Errorf("cell for %q has nothing to tell it apart", cell.Period)
+		}
+	}
+	if cells[0].Profile == cells[1].Profile {
+		t.Errorf("both accounts abbreviate to %q", cells[0].Profile)
+	}
+}
+
+// A sixteen-dot square cannot hold four bars and still look like bars.
+func TestWindowsIconCapsTheNumberOfBars(t *testing.T) {
+	var cells []render.Cell
+	for _, remaining := range []float64{90, 10, 70, 40, 55} {
+		cells = append(cells, render.Cell{
+			Service: model.SourceCodex,
+			Status:  model.WindowStatus{Known: true, UsedPercent: 100 - remaining},
+		})
+	}
+
+	got := capSquareCells(cells)
+	if len(got) != squareCellLimit {
+		t.Fatalf("got %d bars, want at most %d", len(got), squareCellLimit)
+	}
+	// The ones kept are the ones worth watching.
+	if r := got[0].Status.RemainingPercent(); r != 10 {
+		t.Errorf("first kept cell has %v%% left, want the most constrained 10%%", r)
+	}
+	if r := got[len(got)-1].Status.RemainingPercent(); r > 55 {
+		t.Errorf("kept a cell with %v%% left over one with less", r)
+	}
+	// Under the limit nothing is dropped or reordered.
+	few := cells[:2]
+	if kept := capSquareCells(few); len(kept) != 2 || kept[0] != few[0] {
+		t.Errorf("a short list was disturbed: %+v", kept)
 	}
 }
 
