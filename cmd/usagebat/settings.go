@@ -93,6 +93,7 @@ func (a *app) settingsPage() webui.Page {
 		Version:    version.String(),
 		Footer:     p.T("viewOnGitHub"),
 		FooterHref: homepageURL,
+		Mascot:     mascot(cfg, snap, p),
 		Sections:   a.chartSections(cfg, snap, p),
 	}
 	// Settings go in the narrow column beside the charts.

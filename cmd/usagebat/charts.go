@@ -24,6 +24,25 @@ const (
 	chartH = 120
 )
 
+// mascot draws the app's icon wearing the expression the tightest limit
+// deserves. It says nothing the batteries do not; it is there because the
+// screen is nicer with it than without.
+func mascot(cfg *config.Config, snap *model.Snapshot, p i18n.Printer) template.HTML {
+	worst, known := 100.0, false
+	for _, cell := range displayCells(cfg, snap) {
+		if !cell.Status.Known {
+			continue
+		}
+		known = true
+		if r := cell.Status.RemainingPercent(); r < worst {
+			worst = r
+		}
+	}
+	palette := render.PaletteFrom(cfg.Palette(), false)
+	face := render.FaceFor(worst, known, palette)
+	return template.HTML(render.Mascot(face, p.T("settingsTitle")).SVG)
+}
+
 // chartSections builds the usage charts from recorded history.
 //
 // Reading the file happens per page load rather than on a timer: the settings

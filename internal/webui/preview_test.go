@@ -51,6 +51,7 @@ func previewChart() template.HTML {
 // preview shows every kind of row the real screen can produce.
 func samplePage() Page {
 	return Page{
+		Mascot:     template.HTML(render.Mascot(render.FaceWorried, "usagebat").SVG),
 		Title:      "usagebat の設定",
 		Version:    "0.6.0",
 		Footer:     "GitHubで見る…",

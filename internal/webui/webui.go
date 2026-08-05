@@ -84,6 +84,10 @@ type Page struct {
 	// Footer is a closing line, typically the project link.
 	Footer     string
 	FooterHref string
+	// Mascot is the app's icon, drawn large beside the title. It is decoration
+	// with an opinion, not a reading: the batteries below say the same thing
+	// precisely.
+	Mascot template.HTML
 }
 
 // Main returns the sections that fill the wide column.
