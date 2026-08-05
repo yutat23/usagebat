@@ -40,6 +40,10 @@ func (m DisplayMode) Title() string {
 	return string(m)
 }
 
+// SchemaVersion is the config layout this build writes. Bumping it makes
+// migrate rewrite the file once, so an added setting appears with its default.
+const SchemaVersion = 7
+
 // Config is the on-disk configuration.
 type Config struct {
 	Version        int                     `json:"version"`
@@ -54,6 +58,8 @@ type Config struct {
 	Icon           Icon          `json:"icon"`
 	Colors         Colors        `json:"colors"`
 	Notifications  Notifications `json:"notifications"`
+	UpdateCheck    UpdateCheck   `json:"updateCheck"`
+	History        History       `json:"history"`
 	Sources        Sources       `json:"sources"`
 
 	path string
@@ -71,6 +77,22 @@ type Notifications struct {
 type BankedResetExpiry struct {
 	Enabled        bool  `json:"enabled"`
 	ThresholdHours []int `json:"thresholdHours"`
+}
+
+// UpdateCheck governs usagebat's only outbound network request. It ships off:
+// everything else the app does is local, and asking GitHub for a release
+// number is a choice the user gets to make.
+type UpdateCheck struct {
+	Enabled       bool `json:"enabled"`
+	IntervalHours int  `json:"intervalHours"`
+}
+
+// History governs the samples the usage charts are drawn from. It stays on
+// this machine; the charts have nothing to show without it, so it ships on.
+type History struct {
+	Enabled         bool `json:"enabled"`
+	IntervalMinutes int  `json:"intervalMinutes"`
+	RetentionDays   int  `json:"retentionDays"`
 }
 
 // LimitDisplay independently selects periods for one service.
@@ -176,7 +198,7 @@ type Codex struct {
 // Default returns the shipped configuration.
 func Default() *Config {
 	return &Config{
-		Version:        6,
+		Version:        SchemaVersion,
 		Language:       "auto",
 		DisplayMode:    ModeBoth,
 		DisplaySources: []string{model.SourceClaudeCode, model.SourceCodex},
@@ -207,6 +229,8 @@ func Default() *Config {
 		Notifications: Notifications{BankedResetExpiry: BankedResetExpiry{
 			Enabled: true, ThresholdHours: []int{168, 24},
 		}},
+		UpdateCheck: UpdateCheck{Enabled: false, IntervalHours: 24},
+		History:     History{Enabled: true, IntervalMinutes: 5, RetentionDays: 30},
 		Sources: Sources{
 			ClaudeCode: ClaudeCode{
 				Enabled: true,
@@ -301,6 +325,8 @@ func Load() (*Config, error) {
 // migrate updates only values that are known to be an old shipped default.
 // V4 made period selection independent per service. V5 added separate light
 // and dark palettes. V6 added localization and reset-expiry notifications.
+// V7 added the update check, which needs no conversion: an absent key leaves
+// the shipped default, and that default is off.
 func (c *Config) migrate(data []byte) bool {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(data, &raw) != nil {
@@ -310,7 +336,7 @@ func (c *Config) migrate(data []byte) bool {
 	if encoded, ok := raw["version"]; ok {
 		_ = json.Unmarshal(encoded, &version)
 	}
-	if version >= 6 {
+	if version >= SchemaVersion {
 		return false
 	}
 	if version < 4 {
@@ -334,7 +360,7 @@ func (c *Config) migrate(data []byte) bool {
 	if version < 5 {
 		c.migrateLegacyColors()
 	}
-	c.Version = 6
+	c.Version = SchemaVersion
 	return true
 }
 
@@ -434,6 +460,18 @@ func (c *Config) normalise() {
 	}
 	if c.RefreshSeconds < 5 {
 		c.RefreshSeconds = 5
+	}
+	// A check every few minutes would be pointless and rude to GitHub.
+	if c.UpdateCheck.IntervalHours < 1 {
+		c.UpdateCheck.IntervalHours = 24
+	}
+	// One sample a minute is more detail than any chart can show, and it would
+	// make the history file forty times bigger.
+	if c.History.IntervalMinutes < 1 {
+		c.History.IntervalMinutes = 5
+	}
+	if c.History.RetentionDays < 1 {
+		c.History.RetentionDays = 30
 	}
 	if c.Icon.DotSize <= 0 {
 		c.Icon.DotSize = 1.2
@@ -777,6 +815,32 @@ func (c *Config) BankedResetNotifications() BankedResetExpiry {
 func (c *Config) ToggleBankedResetNotifications() error {
 	c.mu.Lock()
 	c.Notifications.BankedResetExpiry.Enabled = !c.Notifications.BankedResetExpiry.Enabled
+	c.mu.Unlock()
+	return c.Save()
+}
+
+func (c *Config) UpdateCheckSettings() UpdateCheck {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.UpdateCheck
+}
+
+func (c *Config) HistorySettings() History {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.History
+}
+
+func (c *Config) ToggleHistory() error {
+	c.mu.Lock()
+	c.History.Enabled = !c.History.Enabled
+	c.mu.Unlock()
+	return c.Save()
+}
+
+func (c *Config) ToggleUpdateCheck() error {
+	c.mu.Lock()
+	c.UpdateCheck.Enabled = !c.UpdateCheck.Enabled
 	c.mu.Unlock()
 	return c.Save()
 }

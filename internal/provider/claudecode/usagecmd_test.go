@@ -1,6 +1,8 @@
 package claudecode
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -154,6 +156,84 @@ func TestReportedFiguresBeatEstimates(t *testing.T) {
 	// Token tallies are real data and stay available for every window.
 	if st.Tokens[model.Window5h].Output != 100 {
 		t.Errorf("token tally lost: %+v", st.Tokens[model.Window5h])
+	}
+}
+
+// writeUsageCache plants the file Claude Code writes after it talks to the
+// service, which is what a scheduled refresh reads.
+func writeUsageCache(t *testing.T, path string, percent float64, fetched time.Time) {
+	t.Helper()
+	body := fmt.Sprintf(`{"cachedUsageUtilization":{"fetchedAtMs":%d,`+
+		`"utilization":{"five_hour":{"utilization":%v,"resets_at":%q}}}}`,
+		fetched.UnixMilli(), percent, fetched.Add(time.Hour).Format(time.RFC3339))
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A scheduled refresh reads the cache Claude Code left behind, which costs
+// nothing but can be minutes old.
+func TestScheduledRefreshUsesTheCache(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeUsageCache(t, filepath.Join(dir, ".claude.json"), 20, now.Add(-time.Minute))
+
+	p := providerWithReported(t, dir, now, map[model.Window]model.WindowStatus{
+		model.Window5h: {Window: model.Window5h, Known: true, UsedPercent: 51},
+	})
+	st := p.Collect(now)
+
+	if got := st.Windows[model.Window5h].UsedPercent; got != 20 {
+		t.Errorf("5h = %v%%, want the cached 20%%", got)
+	}
+	if !strings.Contains(st.Note, "Claude usage cache") {
+		t.Errorf("note = %q, want the cache named", st.Note)
+	}
+}
+
+// A refresh the user asked for goes to /usage instead, because the cache is
+// only as fresh as the last time Claude Code itself ran.
+func TestRequestedRefreshPrefersUsageOverTheCache(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeUsageCache(t, filepath.Join(dir, ".claude.json"), 20, now.Add(-time.Minute))
+
+	p := providerWithReported(t, dir, now, map[model.Window]model.WindowStatus{
+		model.Window5h: {Window: model.Window5h, Known: true, UsedPercent: 51},
+	})
+	p.RequestAuthoritative()
+	st := p.Collect(now)
+
+	if got := st.Windows[model.Window5h].UsedPercent; got != 51 {
+		t.Errorf("5h = %v%%, want the /usage reading of 51%%", got)
+	}
+	if !strings.Contains(st.Note, "/usage") {
+		t.Errorf("note = %q, want /usage named as the source", st.Note)
+	}
+
+	// The request is spent: the next scheduled refresh is cheap again.
+	if got := p.Collect(now).Windows[model.Window5h].UsedPercent; got != 20 {
+		t.Errorf("5h = %v%% on the next refresh, want the cache back at 20%%", got)
+	}
+}
+
+// When the CLI cannot be run, an authoritative request must not lose the
+// reading that is available.
+func TestRequestedRefreshFallsBackToTheCache(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeUsageCache(t, filepath.Join(dir, ".claude.json"), 20, now.Add(-time.Minute))
+
+	c := config.Default().Sources.ClaudeCode
+	c.ProjectsDir = dir
+	c.UsageCacheFile = filepath.Join(dir, ".claude.json")
+	c.UsageCommand.Path = filepath.Join(dir, "no-such-claude")
+	p := New(&c)
+	p.RequestAuthoritative()
+
+	st := p.Collect(now)
+	if got := st.Windows[model.Window5h].UsedPercent; got != 20 {
+		t.Errorf("5h = %v%%, want the cache used when /usage cannot run", got)
 	}
 }
 

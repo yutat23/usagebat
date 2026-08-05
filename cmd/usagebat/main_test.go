@@ -14,6 +14,7 @@ import (
 	"github.com/yutat23/usagebat/internal/provider"
 	"github.com/yutat23/usagebat/internal/tray"
 	"github.com/yutat23/usagebat/internal/version"
+	"github.com/yutat23/usagebat/internal/webui"
 )
 
 func TestDisplayCellsUseShortestLimitPerService(t *testing.T) {
@@ -171,6 +172,75 @@ func TestDisplayCellsUseIndependentExplicitLimits(t *testing.T) {
 	if len(cells) != 2 || cells[0].Service != model.SourceClaudeCode || cells[0].Period != "WK" ||
 		cells[1].Service != model.SourceCodex || cells[1].Period != "MO" {
 		t.Fatalf("independent cells = %+v", cells)
+	}
+}
+
+// countingProvider records whether it was asked for a live reading.
+type countingProvider struct {
+	mu       sync.Mutex
+	collects int
+	live     int
+}
+
+func (p *countingProvider) ID() string { return model.SourceClaudeCode }
+
+func (p *countingProvider) Collect(time.Time) model.SourceStatus {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.collects++
+	return model.SourceStatus{ID: model.SourceClaudeCode, Name: "Claude Code"}
+}
+
+func (p *countingProvider) RequestAuthoritative() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.live++
+}
+
+func (p *countingProvider) counts() (collects, live int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.collects, p.live
+}
+
+// Refresh exists because somebody doubts the number on screen, so it has to go
+// past whatever each provider has cached. The scheduled refreshes stay cheap.
+func TestRefreshAsksProvidersForLiveFigures(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := &countingProvider{}
+	a := &app{
+		cfg:       cfg,
+		backend:   &stubBackend{},
+		providers: []provider.Provider{live},
+		settings:  &webui.Server{},
+		refresh:   make(chan struct{}, 1),
+	}
+
+	a.update()
+	if _, asked := live.counts(); asked != 0 {
+		t.Fatalf("a scheduled refresh asked for live figures %d times", asked)
+	}
+
+	a.onClick(idRefresh)
+	a.update()
+	collects, asked := live.counts()
+	if asked != 1 {
+		t.Fatalf("asked for live figures %d times after refresh, want 1", asked)
+	}
+	if collects != 2 {
+		t.Fatalf("collected %d times, want one per update", collects)
+	}
+
+	// The request is spent by the collection that used it.
+	a.update()
+	if _, asked := live.counts(); asked != 1 {
+		t.Fatalf("asked %d times; the request outlived its refresh", asked)
 	}
 }
 

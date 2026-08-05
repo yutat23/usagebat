@@ -22,7 +22,9 @@ mkdir -p "$release_dir" "$stage/usagebat.app/Contents/MacOS" \
   "$stage/usagebat.app/Contents/Resources"
 
 module=github.com/yutat23/usagebat
-version_flag="-X ${module}/internal/version.Value=$version"
+# -s -w drop the symbol table and DWARF, which is about a third of the binary.
+# Stack traces survive; only debugger symbols are lost.
+version_flag="-s -w -X ${module}/internal/version.Value=$version"
 cache_dir=${GOCACHE:-"${TMPDIR:-/tmp}/usagebat-go-cache"}
 
 cd "$root"

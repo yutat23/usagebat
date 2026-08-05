@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/yutat23/usagebat/internal/appbundle"
 	"github.com/yutat23/usagebat/internal/autostart"
 	"github.com/yutat23/usagebat/internal/config"
+	"github.com/yutat23/usagebat/internal/history"
 	"github.com/yutat23/usagebat/internal/i18n"
 	"github.com/yutat23/usagebat/internal/model"
 	notifyengine "github.com/yutat23/usagebat/internal/notify"
@@ -27,7 +29,9 @@ import (
 	"github.com/yutat23/usagebat/internal/provider/codex"
 	"github.com/yutat23/usagebat/internal/render"
 	"github.com/yutat23/usagebat/internal/tray"
+	"github.com/yutat23/usagebat/internal/update"
 	"github.com/yutat23/usagebat/internal/version"
+	"github.com/yutat23/usagebat/internal/webui"
 )
 
 func init() {
@@ -51,6 +55,22 @@ type app struct {
 	// macOS launch. Such binaries have no application bundle identity, and
 	// UserNotifications raises an Objective-C exception if called directly.
 	notificationsUnavailable bool
+
+	// settings serves the browser settings screen. It only listens while the
+	// screen is in use.
+	settings *webui.Server
+	// recorder accumulates the samples the usage charts are drawn from, and
+	// updates is the optional GitHub release check. Both are self-synchronised
+	// and nil in tests.
+	recorder *history.Recorder
+	updates  *update.Checker
+	latest   atomic.Pointer[update.Release]
+
+	// authoritative asks the next collection to fetch live figures rather than
+	// whatever each provider has cached. Click handlers run on their own
+	// goroutines and must not touch providers, so they raise this instead and
+	// the update loop acts on it.
+	authoritative atomic.Bool
 
 	refresh chan struct{}
 	snap    atomic.Pointer[model.Snapshot]
@@ -113,8 +133,14 @@ func main() {
 		cfg:      cfg,
 		backend:  tray.New(),
 		notifier: notifyengine.New(),
+		settings: &webui.Server{},
+		recorder: newRecorder(cfg),
+		updates:  update.New(),
 		refresh:  make(chan struct{}, 1),
 	}
+	// Wired after construction: both callbacks need the app itself.
+	a.settings.Render = a.settingsPage
+	a.settings.Activate = a.applySetting
 	a.rebuild()
 
 	if *dump != "" {
@@ -280,6 +306,16 @@ func (a *app) update() {
 	cfg, providers := a.cfg, a.providers
 	a.mu.Unlock()
 
+	// Consumed here rather than in the handler: providers keep unsynchronised
+	// state and are only ever touched on this goroutine.
+	if a.authoritative.Swap(false) {
+		for _, p := range providers {
+			if live, ok := p.(provider.Authoritative); ok {
+				live.RequestAuthoritative()
+			}
+		}
+	}
+
 	now := time.Now()
 	snap := &model.Snapshot{UpdatedAt: now}
 	for _, p := range providers {
@@ -288,6 +324,9 @@ func (a *app) update() {
 	snap.AggregateSources(model.AllWindows, cfg.EnabledDisplaySources())
 	a.snap.Store(snap)
 	p := i18n.New(cfg.LanguageSetting())
+
+	a.recordHistory(cfg, snap, now)
+	a.startUpdateCheck(cfg, now)
 
 	a.backend.SetIcon(a.renderIcon(cfg, snap))
 	a.backend.SetTooltip(tooltip(snap, now, p))
@@ -308,6 +347,57 @@ func (a *app) update() {
 			log.Printf("notification state: %v", err)
 		}
 	}
+}
+
+// newRecorder builds the history recorder from the config's sampling settings.
+// They are read once: changing them is rare, and a resident recorder that
+// re-reads them every refresh would have to re-open its file each time.
+func newRecorder(cfg *config.Config) *history.Recorder {
+	settings := cfg.HistorySettings()
+	return history.NewAt(history.DefaultPath(), history.Options{
+		Interval:  time.Duration(settings.IntervalMinutes) * time.Minute,
+		Retention: time.Duration(settings.RetentionDays) * 24 * time.Hour,
+	})
+}
+
+// recordHistory samples the snapshot for the usage charts. A failure here must
+// never interrupt a refresh: the tray is the product, the charts are extra.
+func (a *app) recordHistory(cfg *config.Config, snap *model.Snapshot, now time.Time) {
+	if a.recorder == nil || !cfg.HistorySettings().Enabled {
+		return
+	}
+	if _, err := a.recorder.Observe(snap, now); err != nil {
+		log.Printf("history: %v", err)
+	}
+}
+
+// startUpdateCheck runs the check on its own goroutine. The refresh loop is
+// already slow enough with providers in it, and a network request that hangs
+// until its timeout must not hold the icon and the menu back.
+func (a *app) startUpdateCheck(cfg *config.Config, now time.Time) {
+	settings := cfg.UpdateCheckSettings()
+	if a.updates == nil || !settings.Enabled {
+		return
+	}
+	if !a.updates.Begin(now, time.Duration(settings.IntervalHours)*time.Hour) {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		release, err := a.updates.Check(ctx, version.String())
+		if err != nil {
+			// Being offline is ordinary. The next check is a whole interval
+			// away, so this cannot fill the log.
+			log.Printf("update check: %v", err)
+			return
+		}
+		if release == nil {
+			return
+		}
+		a.latest.Store(release)
+		a.requestRefresh()
+	}()
 }
 
 // reloadConfigIfChanged picks up edits made in the config file, so calibrating
@@ -421,6 +511,9 @@ const (
 	idLanguagePfx   = "language:"
 	idNotifications = "notifications:banked-reset"
 	idHomepage      = "homepage"
+	idSettings      = "settings"
+	idHistory       = "history"
+	idUpdateCheck   = "update-check"
 )
 
 // homepageURL is where the about section sends anyone looking for the source,
@@ -562,7 +655,7 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time, p i18n.P
 	items = append(items,
 		tray.Item{Separator: true},
 		tray.Item{ID: idRefresh, Title: p.T("refreshNow")},
-		tray.Item{ID: idConfig, Title: p.T("openConfig")},
+		tray.Item{ID: idSettings, Title: p.T("settings")},
 		// The version doubles as the heading of the about section: a tray menu
 		// has no room for a row that only says "About".
 		tray.Item{Title: "usagebat " + version.String(), Disabled: true},
@@ -680,7 +773,13 @@ func (a *app) onClick(id string) {
 		a.backend.Quit()
 		return
 	case id == idRefresh:
+		// A refresh somebody asked for is worth going to the service for; the
+		// scheduled ones stay cheap.
+		a.authoritative.Store(true)
 		a.requestRefresh()
+		return
+	case id == idSettings:
+		a.openSettings()
 		return
 	case id == idConfig:
 		if err := openPath(a.currentConfig().FilePath()); err != nil {
@@ -704,6 +803,10 @@ func (a *app) onClick(id string) {
 		return
 	case id == idNotifications:
 		a.mutateConfig(func(c *config.Config) error { return c.ToggleBankedResetNotifications() })
+	case id == idHistory:
+		a.mutateConfig(func(c *config.Config) error { return c.ToggleHistory() })
+	case id == idUpdateCheck:
+		a.mutateConfig(func(c *config.Config) error { return c.ToggleUpdateCheck() })
 	case strings.HasPrefix(id, idLanguagePfx):
 		language := strings.TrimPrefix(id, idLanguagePfx)
 		a.mutateConfig(func(c *config.Config) error { return c.SetLanguage(language) })

@@ -17,3 +17,15 @@ type Provider interface {
 	// Collect returns the state as of now.
 	Collect(now time.Time) model.SourceStatus
 }
+
+// Authoritative is implemented by providers that normally read something
+// cheap and cached, but can go and ask the service directly when asked.
+//
+// A scheduled refresh stays cheap; a refresh the user asked for is worth a
+// subprocess and a few seconds, because the reason to press it is doubting the
+// number on screen.
+type Authoritative interface {
+	// RequestAuthoritative makes the next Collect fetch a live reading. It is
+	// called from the same goroutine as Collect.
+	RequestAuthoritative()
+}

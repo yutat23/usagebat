@@ -52,7 +52,20 @@ type Provider struct {
 	lastAttempt  time.Time
 	reportErr    string
 	resolvedPath string
+
+	// authoritative makes the next Collect run /usage instead of trusting the
+	// cache Claude Code left behind. Set by RequestAuthoritative and cleared
+	// once the run has happened.
+	authoritative bool
 }
+
+// RequestAuthoritative implements provider.Authoritative.
+//
+// The usage cache is whatever Claude Code wrote the last time it talked to the
+// service, which can be an hour ago on a machine where nobody has run it
+// since. Asking /usage costs a subprocess but returns what the account
+// actually looks like now, which is what somebody pressing refresh wants.
+func (p *Provider) RequestAuthoritative() { p.authoritative = true }
 
 type entry struct {
 	ts       time.Time
@@ -107,8 +120,20 @@ func (p *Provider) Collect(now time.Time) model.SourceStatus {
 		UpdatedAt: now,
 	}
 
-	reported, cacheErr := p.collectCached(now)
+	var reported map[model.Window]model.WindowStatus
+	var cacheErr error
 	origin := "Claude usage cache"
+
+	// A user-requested refresh asks the service; a scheduled one reads the
+	// cache, which costs nothing.
+	if p.authoritative {
+		p.authoritative = false
+		reported, origin = p.collectReported(now), "/usage"
+	}
+	if len(reported) == 0 {
+		reported, cacheErr = p.collectCached(now)
+		origin = "Claude usage cache"
+	}
 	if len(reported) == 0 {
 		reported = p.collectReported(now)
 		origin = "/usage"
@@ -196,6 +221,9 @@ func (p *Provider) collectReported(now time.Time) map[model.Window]model.WindowS
 		return nil
 	}
 
+	// The throttle applies to authoritative requests too: pressing refresh
+	// twice must not start two subprocesses, and the second press returns the
+	// live reading the first one fetched seconds earlier.
 	throttled := !p.lastAttempt.IsZero() &&
 		now.Sub(p.lastAttempt) < time.Duration(uc.MinIntervalSeconds)*time.Second
 	if !throttled {

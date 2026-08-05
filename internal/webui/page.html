@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{{.Title}}</title>
+<style>
+/* Everything is a form submission, so the page needs no script at all and can
+   keep a content-security-policy that forbids one outright. */
+:root {
+  color-scheme: light dark;
+  --bg: #ffffff;
+  --fg: #1c1c1e;
+  --dim: #6b6b70;
+  --line: #e3e3e6;
+  --accent: #087567;
+  --raised: #fafafa;
+  --hover: #f0f0f2;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1c1c1e;
+    --fg: #f2f2f2;
+    --dim: #9a9aa0;
+    --line: #38383c;
+    --accent: #52c7b8;
+    --raised: #232326;
+    --hover: #2c2c30;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  padding: 2.5rem 1.25rem 4rem;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.55 -apple-system, "Segoe UI Variable Text", "Segoe UI", system-ui,
+        "Hiragino Sans", "Yu Gothic UI", Meiryo, sans-serif;
+}
+main { max-width: 72rem; margin: 0 auto; }
+h1 {
+  font-size: 1.35rem;
+  font-weight: 650;
+  margin: 0 0 1.75rem;
+  letter-spacing: -0.01em;
+}
+h1 .version { color: var(--dim); font-size: .8rem; font-weight: 400; margin-left: .6rem; }
+/* Charts and settings sit side by side. On a narrow window the settings drop
+   below the charts rather than squeezing both into unreadable columns. */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 2rem; }
+@media (min-width: 60rem) {
+  .layout { grid-template-columns: minmax(0, 1fr) 19rem; }
+}
+.col { min-width: 0; }
+section { margin-bottom: 2.25rem; }
+h2 {
+  font-size: .78rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--dim);
+  margin: 0 0 .6rem;
+}
+.rows {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--raised);
+}
+.rows > * { border-top: 1px solid var(--line); }
+.rows > *:first-child { border-top: none; }
+.note {
+  padding: .55rem .95rem .7rem;
+  color: var(--dim);
+  font-size: .85rem;
+}
+.note.indent, .choice.indent { padding-left: 2.4rem; }
+
+/* A row is a submit button: the click posts the row's id and the server
+   decides what it means, exactly as a menu click does. */
+.choice {
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  width: 100%;
+  padding: .65rem .95rem;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.choice:first-child { border-top: none; }
+.choice:hover { background: var(--hover); }
+.choice:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.mark {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 1.5px solid var(--dim);
+  display: grid;
+  place-items: center;
+}
+.mark.box { border-radius: 4px; }
+.mark.dot { border-radius: 50%; }
+.choice[aria-checked="true"] .mark {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.mark::after { content: ""; }
+.choice[aria-checked="true"] .mark.box::after {
+  width: .55rem; height: .3rem;
+  border: 2px solid var(--bg);
+  border-top: none; border-right: none;
+  transform: translateY(-1px) rotate(-45deg);
+}
+.choice[aria-checked="true"] .mark.dot::after {
+  width: .42rem; height: .42rem;
+  border-radius: 50%;
+  background: var(--bg);
+}
+.action {
+  display: block;
+  width: 100%;
+  padding: .65rem .95rem;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--line);
+  font: inherit;
+  color: var(--accent);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: none;
+}
+.action:first-child { border-top: none; }
+.action:hover { background: var(--hover); }
+.action:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* Charts tile instead of stacking: at full width each one was as tall as the
+   window, which is a lot of room for a line that only has to show a shape. */
+.rows.grid {
+  display: grid;
+  /* auto-fill, not auto-fit: auto-fit collapses the empty tracks, so a single
+     chart stretches across the whole column and towers over the page. Keeping
+     the tracks means one chart is the same size as one of two. */
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  border: none;
+  background: none;
+  gap: .75rem;
+}
+.rows.grid > * {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--raised);
+}
+figure.chart {
+  margin: 0;
+  padding: .7rem .8rem .8rem;
+  border-top: 1px solid var(--line);
+}
+figure.chart:first-child { border-top: none; }
+figure.chart figcaption {
+  color: var(--dim);
+  font-size: .78rem;
+  margin-bottom: .4rem;
+}
+/* The charts are dot art; the SVG itself carries shape-rendering="crispEdges",
+   which is what keeps the dots square as the page scales them. */
+figure.chart svg { display: block; width: 100%; height: auto; }
+/* Charts are drawn on the server, which cannot know the browser's theme, so
+   both are sent and the media query keeps the one that fits. */
+.only-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  .only-light { display: none; }
+  .only-dark { display: block; }
+}
+footer { margin-top: 2.5rem; color: var(--dim); font-size: .85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{.Title}}{{if .Version}}<span class="version">{{.Version}}</span>{{end}}</h1>
+
+  <div class="layout">
+    <div class="col main">
+      {{range .Main}}{{template "section" .}}{{end}}
+    </div>
+    <aside class="col side">
+      {{range .Aside}}{{template "section" .}}{{end}}
+    </aside>
+  </div>
+
+  {{if .Footer}}
+  <footer>
+    {{if .FooterHref}}<a href="{{.FooterHref}}" target="_blank" rel="noopener noreferrer">{{.Footer}}</a>
+    {{else}}{{.Footer}}{{end}}
+  </footer>
+  {{end}}
+</main>
+</body>
+</html>
+
+{{define "section"}}
+<section>
+  {{if .Title}}<h2>{{.Title}}</h2>{{end}}
+  <div class="rows{{if .Grid}} grid{{end}}">
+    {{range .Rows}}
+      {{if eq .Kind 4}}
+        <figure class="chart">
+          {{if .Label}}<figcaption>{{.Label}}</figcaption>{{end}}
+          {{.SVG}}
+        </figure>
+      {{else if eq .Kind 3}}
+        <div class="note{{if .Indent}} indent{{end}}">{{.Label}}</div>
+      {{else if eq .Kind 2}}
+        {{if .Href}}
+          <a class="action" href="{{.Href}}" target="_blank" rel="noopener noreferrer">{{.Label}}</a>
+        {{else}}
+          <form method="post" action="/apply">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button class="action" type="submit">{{.Label}}</button>
+          </form>
+        {{end}}
+      {{else}}
+        <form method="post" action="/apply">
+          <input type="hidden" name="id" value="{{.ID}}">
+          <button class="choice{{if .Indent}} indent{{end}}" type="submit"
+                  role="{{if eq .Kind 1}}radio{{else}}switch{{end}}"
+                  aria-checked="{{if .Checked}}true{{else}}false{{end}}">
+            <span class="mark {{if eq .Kind 1}}dot{{else}}box{{end}}"></span>
+            <span>{{.Label}}</span>
+          </button>
+        </form>
+        {{if .Detail}}<div class="note{{if .Indent}} indent{{end}}">{{.Detail}}</div>{{end}}
+      {{end}}
+    {{end}}
+  </div>
+</section>
+{{end}}

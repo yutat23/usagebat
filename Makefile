@@ -2,7 +2,10 @@ BINARY := usagebat
 APP := build/usagebat.app
 VERSION ?= 0.5.2
 VERSION_PKG := github.com/yutat23/usagebat/internal/version
-VERSION_LDFLAGS := -X $(VERSION_PKG).Value=$(VERSION)
+# -s -w drop the symbol table and DWARF, which is about a third of the binary.
+# Go builds its stack traces from its own runtime tables, so panics still name
+# their functions; only attaching a debugger loses anything.
+VERSION_LDFLAGS := -s -w -X $(VERSION_PKG).Value=$(VERSION)
 
 .PHONY: all build test vet run icons bundle windows release clean
 

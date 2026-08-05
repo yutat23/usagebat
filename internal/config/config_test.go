@@ -43,7 +43,7 @@ func TestV2MigratesFromFixed5hToAutomaticShortest(t *testing.T) {
 	if !c.migrate([]byte(`{"version":2,"windows":["5h"]}`)) {
 		t.Fatal("expected v2 to migrate")
 	}
-	if auto, _ := c.LimitSelection(model.SourceCodex); !auto || c.Version != 6 {
+	if auto, _ := c.LimitSelection(model.SourceCodex); !auto || c.Version != SchemaVersion {
 		t.Fatalf("migrated config = auto %v version %d", auto, c.Version)
 	}
 }
@@ -59,7 +59,7 @@ func TestV4DefaultColorsMigrateToThemePalettes(t *testing.T) {
 	if !c.migrate([]byte(`{"version":4}`)) {
 		t.Fatal("expected v4 config to migrate")
 	}
-	if c.Version != 6 || c.Colors.Light.Good != "#15803D" || c.Colors.Dark.Good != "#4ADE80" {
+	if c.Version != SchemaVersion || c.Colors.Light.Good != "#15803D" || c.Colors.Dark.Good != "#4ADE80" {
 		t.Fatalf("theme defaults not installed: %+v", c.Colors)
 	}
 }
@@ -83,7 +83,7 @@ func TestV5MigratesToLocalizedNotifications(t *testing.T) {
 		t.Fatal("expected v5 migration")
 	}
 	c.normalise()
-	if c.Version != 6 || c.Language != "auto" {
+	if c.Version != SchemaVersion || c.Language != "auto" {
 		t.Fatalf("migration = version %d language %q", c.Version, c.Language)
 	}
 	settings := c.BankedResetNotifications()

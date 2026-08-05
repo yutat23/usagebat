@@ -46,6 +46,19 @@ var messages = map[string][2]string{
 	"refreshNow":      {"Refresh now", "今すぐ更新"},
 	"openConfig":      {"Open config file…", "設定ファイルを開く…"},
 	"viewOnGitHub":    {"View on GitHub…", "GitHubで見る…"},
+	"settings":        {"Settings…", "設定…"},
+	"settingsTitle":   {"usagebat", "usagebat"},
+	"checkForUpdates": {"Check for updates", "更新を確認する"},
+	"upToDate":        {"Up to date", "最新です"},
+	"chartRemaining":  {"Headroom over time", "残量の推移"},
+	"chartTokens":     {"Token usage", "トークン消費量"},
+	"chartActivity":   {"When you use it", "時間帯別の使用傾向"},
+	"chartsPending":   {"Charts appear once usagebat has collected a few hours of history.", "数時間ぶん記録するとグラフが表示されます。"},
+	"recordHistory":   {"Record usage history on this machine", "使用履歴をこの端末に記録する"},
+	"historyDetail":   {"Kept locally and pruned automatically; nothing is uploaded.", "ローカルにのみ保存し、古いものは自動削除します。外部送信はありません。"},
+	"updateDetail":    {"Reads a release number from GitHub. Nothing about you is sent.", "GitHubからリリース番号のみ取得します。利用者の情報は送信しません。"},
+	"lastDays":        {"Last 7 days", "直近7日間"},
+	"chartNoData":     {"No data", "データなし"},
 	"quit":            {"Quit", "終了"},
 	"language":        {"Language / 言語", "言語 / Language"},
 	"systemDefault":   {"System default", "システム設定"},
@@ -182,6 +195,22 @@ func (p Printer) ResetNotification(count int, expires, now time.Time) (string, s
 	body := fmt.Sprintf("%d banked %s %s %s\nExpires %s", count, unit, verb, remaining,
 		when.Format("Jan 2 at 15:04"))
 	return p.T("resetTitle"), body
+}
+
+// Weekdays are the heatmap's row labels, Sunday first.
+func (p Printer) Weekdays() [7]string {
+	if p.Japanese() {
+		return [7]string{"日", "月", "火", "水", "木", "金", "土"}
+	}
+	return [7]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+}
+
+// UpdateAvailable labels the row that opens a newer release.
+func (p Printer) UpdateAvailable(version string) string {
+	if p.Japanese() {
+		return fmt.Sprintf("バージョン %s があります…", version)
+	}
+	return fmt.Sprintf("Version %s available…", version)
 }
 
 func (p Printer) TranslateNote(note string) string {
