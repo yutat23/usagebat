@@ -225,3 +225,150 @@ func TestHandEditIsDetectedAndAcknowledged(t *testing.T) {
 		t.Fatal("MarkSeen should stop the same edit being reported again")
 	}
 }
+
+func TestEditableSettingsPersistValidatedValues(t *testing.T) {
+	c := Default()
+	c.path = filepath.Join(t.TempDir(), "config.json")
+
+	changes := map[string]string{
+		"refreshSeconds":                                 "90",
+		"icon.windowsLayout":                             "single",
+		"history.intervalMinutes":                        "10",
+		"history.retentionDays":                          "60",
+		"updateCheck.intervalHours":                      "12",
+		"notifications.bankedResetExpiry.thresholdHours": "336, 48, 12",
+		"notifications.limitThresholds.percents":         "40, 10",
+		"colors.dark.codex":                              "#123ABC",
+	}
+	for key, value := range changes {
+		if err := c.SetEditableSetting(key, value); err != nil {
+			t.Fatalf("SetEditableSetting(%q): %v", key, err)
+		}
+	}
+
+	got := c.EditableSettings()
+	if got.RefreshSeconds != 90 || got.Icon.WindowsLayout != "single" ||
+		got.History.IntervalMinutes != 10 || got.History.RetentionDays != 60 ||
+		got.UpdateCheck.IntervalHours != 12 || got.Colors.Dark.Codex != "#123ABC" {
+		t.Fatalf("editable settings were not applied: %+v", got)
+	}
+	if want := []int{336, 48, 12}; !sameInts(got.Notifications.BankedResetExpiry.ThresholdHours, want) {
+		t.Fatalf("expiry thresholds = %v, want %v", got.Notifications.BankedResetExpiry.ThresholdHours, want)
+	}
+	if _, err := os.Stat(c.path); err != nil {
+		t.Fatalf("settings were not persisted: %v", err)
+	}
+}
+
+func TestInvalidEditableSettingDoesNotMutateConfig(t *testing.T) {
+	c := Default()
+	c.path = filepath.Join(t.TempDir(), "config.json")
+	before := c.RefreshSeconds
+	if err := c.SetEditableSetting("refreshSeconds", "0"); err == nil {
+		t.Fatal("invalid refresh interval was accepted")
+	}
+	if c.RefreshSeconds != before {
+		t.Fatalf("invalid value changed refresh interval to %d", c.RefreshSeconds)
+	}
+	if err := c.SetEditableSetting("colors.light.good", "red"); err == nil {
+		t.Fatal("non-hex color was accepted")
+	}
+}
+
+func TestCodexProfilesCanBeEditedButNotAllRemoved(t *testing.T) {
+	c := Default()
+	c.path = filepath.Join(t.TempDir(), "config.json")
+	if err := c.SetEditableSetting("codex.profiles.0.label", "Work"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetEditableSetting("codex.profiles.0.short", "WK"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.AddCodexProfile(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetEditableSetting("codex.profiles.1.path", "/tmp/personal-codex"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.MoveCodexProfile(1, -1); err != nil {
+		t.Fatal(err)
+	}
+	profiles := c.EditableSettings().CodexProfiles
+	if profiles[0].Path != "/tmp/personal-codex" || profiles[1].Label != "Work" {
+		t.Fatalf("profiles were not reordered: %+v", profiles)
+	}
+	if err := c.RemoveCodexProfile(0); err != nil {
+		t.Fatal(err)
+	}
+	profiles = c.EditableSettings().CodexProfiles
+	if len(profiles) != 1 || profiles[0].Label != "Work" {
+		t.Fatalf("profiles = %+v", profiles)
+	}
+	if err := c.RemoveCodexProfile(0); err == nil {
+		t.Fatal("removed the final Codex profile")
+	}
+}
+
+func TestCodexProfileMoveRejectsGoingPastAnEnd(t *testing.T) {
+	c := Default()
+	c.path = filepath.Join(t.TempDir(), "config.json")
+	if err := c.MoveCodexProfile(0, -1); err == nil {
+		t.Fatal("moved the first profile before the start")
+	}
+	if got := c.EditableSettings().CodexProfiles; len(got) != 1 || got[0].Path != "auto" {
+		t.Fatalf("failed move changed profiles: %+v", got)
+	}
+}
+
+func TestClaudeProfilesCanBeEditedReorderedAndRetainOne(t *testing.T) {
+	c := Default()
+	c.path = filepath.Join(t.TempDir(), "config.json")
+	if err := c.SetEditableSetting("claude.profiles.0.label", "Work"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetEditableSetting("claude.profiles.0.short", "CW"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.AddClaudeProfile(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.SetEditableSetting("claude.profiles.1.path", "~/.claude-personal"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.MoveClaudeProfile(1, -1); err != nil {
+		t.Fatal(err)
+	}
+	profiles := c.EditableSettings().ClaudeProfiles
+	if profiles[0].Path != "~/.claude-personal" || profiles[1].Label != "Work" {
+		t.Fatalf("Claude profiles were not reordered: %+v", profiles)
+	}
+	if err := c.RemoveClaudeProfile(0); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.RemoveClaudeProfile(0); err == nil {
+		t.Fatal("removed the final Claude profile")
+	}
+}
+
+func TestV7ConfigGainsDefaultClaudeProfile(t *testing.T) {
+	c := Default()
+	c.Sources.ClaudeCode.Profiles = nil
+	if !c.migrate([]byte(`{"version":7}`)) {
+		t.Fatal("expected v7 config to migrate")
+	}
+	if got := c.Sources.ClaudeCode.Profiles; len(got) != 1 || got[0].Path != "auto" {
+		t.Fatalf("migrated Claude profiles = %+v", got)
+	}
+}
+
+func sameInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}

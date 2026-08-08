@@ -205,6 +205,89 @@ func TestUnreportedWindowsStayUnknown(t *testing.T) {
 	}
 }
 
+func TestEachClaudeProfileStaysItsOwnSource(t *testing.T) {
+	now := time.Now()
+	work, personal := filepath.Join(t.TempDir(), ".claude-work"), filepath.Join(t.TempDir(), ".claude-personal")
+	for _, tc := range []struct {
+		dir string
+		pct float64
+	}{{work, 17}, {personal, 83}} {
+		if err := os.MkdirAll(filepath.Join(tc.dir, "projects"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		cache := fmt.Sprintf(`{"cachedUsageUtilization":{"fetchedAtMs":%d,"utilization":{"five_hour":{"utilization":%v,"resets_at":%q}}}}`,
+			now.UnixMilli(), tc.pct, now.Add(time.Hour).Format(time.RFC3339))
+		if err := os.WriteFile(tc.dir+".json", []byte(cache), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := config.Default().Sources.ClaudeCode
+	cfg.UsageCommand.Enabled = false
+	cfg.Profiles = []config.Profile{
+		{Path: work, Label: "Claude work", Short: "CW"},
+		{Path: personal, Label: "Claude personal", Short: "CP"},
+	}
+	providers := Providers(&cfg)
+	if len(providers) != 2 {
+		t.Fatalf("providers = %d, want two", len(providers))
+	}
+	ids := map[string]bool{}
+	used := map[string]float64{}
+	for _, provider := range providers {
+		st := provider.Collect(now)
+		ids[st.ID] = true
+		used[st.Name] = st.Windows[model.Window5h].UsedPercent
+		if st.Short == "" {
+			t.Errorf("%s lost its icon abbreviation", st.Name)
+		}
+	}
+	if len(ids) != 2 || used["Claude work"] != 17 || used["Claude personal"] != 83 {
+		t.Fatalf("profiles were combined: ids=%v used=%v", ids, used)
+	}
+}
+
+func TestAutoClaudeProfileUsesConfigDirEnvironment(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".claude-work")
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	cfg := config.Default().Sources.ClaudeCode
+	p := Providers(&cfg)[0]
+	if p.configDir != dir || p.projectsDir() != filepath.Join(dir, "projects") || p.usageCacheFile != dir+".json" {
+		t.Fatalf("auto profile resolved incorrectly: dir=%q projects=%q cache=%q", p.configDir, p.projectsDir(), p.usageCacheFile)
+	}
+}
+
+func TestAutoClaudeProfileDoesNotForceConfigDirForUsageCommand(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".claude-work")
+	t.Setenv("CLAUDE_CONFIG_DIR", dir)
+	cfg := config.Default().Sources.ClaudeCode
+	p := Providers(&cfg)[0]
+	if got := p.usageCommandConfigDir(); got != "" {
+		t.Fatalf("auto profile would force CLAUDE_CONFIG_DIR=%q", got)
+	}
+}
+
+func TestExplicitClaudeProfileForcesConfigDirForUsageCommand(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), ".claude-work")
+	cfg := config.Default().Sources.ClaudeCode
+	cfg.Profiles = []config.Profile{{Path: dir}}
+	p := Providers(&cfg)[0]
+	if got := p.usageCommandConfigDir(); got != dir {
+		t.Fatalf("explicit profile usage CLAUDE_CONFIG_DIR=%q, want %q", got, dir)
+	}
+}
+
+func TestExplicitStandardClaudeDirBehavesLikeAuto(t *testing.T) {
+	cfg := config.Default().Sources.ClaudeCode
+	cfg.Profiles = []config.Profile{{Path: "~/.claude"}}
+	p := Providers(&cfg)[0]
+	if got := p.usageCommandConfigDir(); got != "" {
+		t.Fatalf("standard profile would force CLAUDE_CONFIG_DIR=%q", got)
+	}
+	if p.ID() != model.SourceClaudeCode || p.label != "Claude Code" {
+		t.Fatalf("standard profile identity = %q, %q", p.ID(), p.label)
+	}
+}
+
 func TestNonAssistantLinesAreIgnored(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now()

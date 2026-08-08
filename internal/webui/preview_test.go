@@ -51,11 +51,15 @@ func previewChart() template.HTML {
 // preview shows every kind of row the real screen can produce.
 func samplePage() Page {
 	return Page{
-		Mascot:     template.HTML(render.Mascot(render.FaceWorried, "usagebat").SVG),
-		Title:      "usagebat の設定",
-		Version:    "0.6.0",
-		Footer:     "GitHubで見る…",
-		FooterHref: "https://github.com/yutat23/usagebat",
+		Mascot:         template.HTML(render.Mascot("usagebat").SVG),
+		Title:          "usagebat の設定",
+		Version:        "0.6.0",
+		OverviewLabel:  "概要",
+		SettingsLabel:  "設定カテゴリ",
+		SavedLabel:     "保存しました",
+		SaveErrorLabel: "保存できませんでした",
+		Footer:         "GitHubで見る…",
+		FooterHref:     "https://github.com/yutat23/usagebat",
 		Sections: []Section{
 			{Title: "残量の推移 — 直近7日間", Grid: true, Rows: []Row{
 				{Label: "Claude Code · 5h", Kind: KindChart, SVG: previewChart()},
@@ -65,27 +69,42 @@ func samplePage() Page {
 			{Title: "トークン消費量", Grid: true, Rows: []Row{
 				{Label: "Claude Code · 5h", Kind: KindChart, SVG: previewChart()},
 			}},
-			{Title: "アイコン表示", Aside: true, Rows: []Row{
+			{Title: "アイコン表示", Aside: true, CategoryID: "general", CategoryTitle: "一般", Rows: []Row{
 				{ID: "mode:both", Label: "バッテリー + %", Kind: KindRadio, Group: "mode", Checked: true},
 				{ID: "mode:battery", Label: "バッテリーのみ", Kind: KindRadio, Group: "mode"},
 				{ID: "mode:percent", Label: "%のみ", Kind: KindRadio, Group: "mode"},
+				{ID: "setting:icon.windowsLayout", Label: "Windowsアイコンの配置", Kind: KindSelect,
+					Value: "stack", SubmitLabel: "保存", Options: []Option{
+						{Value: "stack", Label: "複数の制限を積み重ねる"},
+						{Value: "single", Label: "最も厳しい制限だけ表示"},
+					}},
+				{ID: "setting:refreshSeconds", Label: "更新間隔", Kind: KindInput, InputType: "number",
+					Value: "60", Min: "5", Max: "3600", Detail: "秒（5〜3600）", SubmitLabel: "保存"},
 			}},
-			{Title: "アイコンに表示するサービス", Aside: true, Rows: []Row{
+			{Title: "アイコンに表示するサービス", Aside: true, CategoryID: "general", CategoryTitle: "一般", Rows: []Row{
 				{ID: "source:claude-code", Label: "Claude Code", Kind: KindToggle, Checked: true},
 				{ID: "source:codex", Label: "Codex", Kind: KindToggle, Checked: true},
 			}},
-			{Title: "Claude Codeの制限", Aside: true, Rows: []Row{
+			{Title: "Claude Codeの制限", Aside: true, CategoryID: "general", CategoryTitle: "一般", Rows: []Row{
 				{ID: "limit:claude-code:auto", Label: "最短の制限", Kind: KindToggle, Checked: true},
 				{ID: "limit:claude-code:5h", Label: "5h", Kind: KindToggle, Indent: 1},
 				{ID: "limit:claude-code:weekly", Label: "週間", Kind: KindToggle, Indent: 1},
 				{ID: "limit:claude-code:monthly", Label: "月間", Kind: KindToggle, Indent: 1},
 			}},
-			{Title: "言語 / Language", Aside: true, Rows: []Row{
+			{Title: "言語 / Language", Aside: true, CategoryID: "general", CategoryTitle: "一般", Rows: []Row{
 				{ID: "language:auto", Label: "システム設定", Kind: KindRadio, Group: "lang", Checked: true},
 				{ID: "language:en", Label: "English", Kind: KindRadio, Group: "lang"},
 				{ID: "language:ja", Label: "日本語", Kind: KindRadio, Group: "lang"},
 			}},
-			{Aside: true, Rows: []Row{
+			{Title: "Codexアカウント 1", Aside: true, CategoryID: "accounts", CategoryTitle: "アカウント", Rows: []Row{
+				{ID: "setting:codex.profiles.0.path", Label: "プロファイルディレクトリ", Kind: KindInput,
+					InputType: "text", Value: "auto", SubmitLabel: "保存"},
+				{ID: "setting:codex.profiles.0.label", Label: "表示名", Kind: KindInput,
+					InputType: "text", Value: "Work", SubmitLabel: "保存"},
+				{ID: "setting:colors.dark.codex", Label: "Codexの配色", Kind: KindInput,
+					InputType: "color", Value: "#52C7B8", SubmitLabel: "保存"},
+			}},
+			{Aside: true, CategoryID: "general", CategoryTitle: "一般", Rows: []Row{
 				{ID: "notifications:banked-reset", Label: "banked resetの期限切れ通知",
 					Kind: KindToggle, Checked: true},
 				{ID: "autostart", Label: "OS起動時に自動起動", Kind: KindToggle, Checked: true},

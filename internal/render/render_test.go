@@ -14,6 +14,22 @@ import (
 	"github.com/yutat23/usagebat/internal/model"
 )
 
+func TestFontSupportsEveryUppercaseProfileInitial(t *testing.T) {
+	for _, r := range "ABCDEFGHIJKLMNOPQRSTUVWXYZ" {
+		glyph, ok := glyphs[r]
+		if !ok {
+			t.Errorf("profile initial %q falls back to ?", r)
+			continue
+		}
+		if glyph == glyphs['?'] {
+			t.Errorf("profile initial %q looks like ?", r)
+		}
+	}
+	if got, want := glyphs['P'], ([glyphH]uint8{0b110, 0b101, 0b110, 0b100, 0b100}); got != want {
+		t.Errorf("P glyph = %v, want %v", got, want)
+	}
+}
+
 func testPalette() Palette { return PaletteFrom(config.Default().Colors, false) }
 
 func known(used float64) model.WindowStatus {

@@ -179,31 +179,88 @@ func TestDisplayCellsUseIndependentExplicitLimits(t *testing.T) {
 // twoCodexProfiles is a machine signed in to two Codex accounts.
 func twoCodexProfiles() *model.Snapshot {
 	return &model.Snapshot{Sources: []model.SourceStatus{
-		{ID: "codex:work-1a2b", Name: "Codex (~/.codex-work)", Windows: map[model.Window]model.WindowStatus{
+		{ID: "codex:work-1a2b", Name: "codex-w", Short: "CW", Windows: map[model.Window]model.WindowStatus{
 			model.WindowMonthly: {Known: true, UsedPercent: 30},
 		}},
-		{ID: "codex:home-3c4d", Name: "Codex (~/.codex-home)", Windows: map[model.Window]model.WindowStatus{
+		{ID: "codex:home-3c4d", Name: "codex-p", Short: "CP", Windows: map[model.Window]model.WindowStatus{
 			model.WindowMonthly: {Known: true, UsedPercent: 80},
 		}},
 	}}
 }
 
-// Naming the service folds its accounts into the most constrained figure,
-// which is the right default: one battery for "how is Codex doing".
-func TestServiceSelectionAggregatesItsProfiles(t *testing.T) {
+func twoClaudeProfiles() *model.Snapshot {
+	return &model.Snapshot{Sources: []model.SourceStatus{
+		{ID: "claude-code:work-1a2b", Name: "Claude work", Short: "CW", Windows: map[model.Window]model.WindowStatus{
+			model.Window5h: {Known: true, UsedPercent: 22},
+		}},
+		{ID: "claude-code:personal-3c4d", Name: "Claude personal", Short: "CP", Windows: map[model.Window]model.WindowStatus{
+			model.Window5h: {Known: true, UsedPercent: 67},
+		}},
+	}}
+}
+
+func TestClaudeProfilesGetSeparateCellsAndMenuEntries(t *testing.T) {
+	cfg := config.Default()
+	cfg.DisplaySources = []string{model.SourceClaudeCode}
+	cfg.DisplayLimits[model.SourceClaudeCode] = config.LimitDisplay{Windows: []string{"5h"}}
+	cells := displayCells(cfg, twoClaudeProfiles())
+	if len(cells) != 2 || cells[0].Profile != "CW" || cells[1].Profile != "CP" {
+		t.Fatalf("Claude cells = %+v, want separate CW and CP cells", cells)
+	}
+	menu := buildMenu(cfg, twoClaudeProfiles(), time.Now(), i18n.New("en"))
+	found := map[string]bool{}
+	for _, item := range menu {
+		if item.Title == "Claude work" || item.Title == "Claude personal" {
+			found[item.Title] = true
+		}
+	}
+	if !found["Claude work"] || !found["Claude personal"] {
+		t.Fatalf("Claude menu headings = %v", found)
+	}
+}
+
+// Selecting Codex expands configured accounts so their CW/CP abbreviations do
+// not disappear into one generic CX cell.
+func TestServiceSelectionShowsEachConfiguredProfile(t *testing.T) {
 	cfg := config.Default()
 	cfg.DisplaySources = []string{model.SourceCodex}
 	cfg.DisplayLimits[model.SourceCodex] = config.LimitDisplay{Windows: []string{"monthly"}}
 
 	cells := displayCells(cfg, twoCodexProfiles())
-	if len(cells) != 1 {
-		t.Fatalf("got %d cells, want the two accounts folded into one", len(cells))
+	if len(cells) != 2 {
+		t.Fatalf("got %d cells, want one for each configured account", len(cells))
 	}
-	if got := cells[0].Status.UsedPercent; got != 80 {
-		t.Errorf("used = %v, want the fuller account's 80", got)
+	if cells[0].Profile != "CW" || cells[1].Profile != "CP" {
+		t.Fatalf("profiles = %q, %q; want CW and CP", cells[0].Profile, cells[1].Profile)
 	}
-	if cells[0].Profile != "" {
-		t.Errorf("an aggregated cell names no account, got %q", cells[0].Profile)
+	if cells[0].Status.UsedPercent != 30 || cells[1].Status.UsedPercent != 80 {
+		t.Errorf("account readings were combined: %+v", cells)
+	}
+}
+
+func TestMenuListsEachConfiguredCodexProfile(t *testing.T) {
+	menu := buildMenu(config.Default(), twoCodexProfiles(), time.Now(), i18n.New("en"))
+	found := map[string]bool{}
+	for _, item := range menu {
+		if item.Title == "codex-w" || item.Title == "codex-p" {
+			found[item.Title] = true
+		}
+	}
+	if !found["codex-w"] || !found["codex-p"] {
+		t.Fatalf("menu profile headings = %v, want codex-w and codex-p", found)
+	}
+}
+
+func TestSingleUnnamedCodexProfileKeepsCompactServiceCell(t *testing.T) {
+	cfg := config.Default()
+	cfg.DisplaySources = []string{model.SourceCodex}
+	snap := &model.Snapshot{Sources: []model.SourceStatus{{
+		ID: "codex:default-1a2b", Name: "Codex",
+		Windows: map[model.Window]model.WindowStatus{model.Window5h: {Known: true}},
+	}}}
+	cells := displayCells(cfg, snap)
+	if len(cells) != 1 || cells[0].Profile != "" {
+		t.Fatalf("default Codex cell = %+v, want one compact CX cell", cells)
 	}
 }
 

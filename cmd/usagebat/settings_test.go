@@ -89,9 +89,9 @@ func TestPageWithoutHistoryExplainsItself(t *testing.T) {
 	}
 }
 
-// Charts and settings share one screen but not one column: the charts fill
-// the wide side, the settings sit beside them.
-func TestChartsAndSettingsAreSeparatePanes(t *testing.T) {
+// Charts and settings share one screen but remain separate groups: charts use
+// the full-width area and settings flow as cards below them.
+func TestChartsAndSettingsAreSeparateAreas(t *testing.T) {
 	page := recordedApp(t).settingsPage()
 
 	var charts, controls int
@@ -120,6 +120,41 @@ func TestChartsAndSettingsAreSeparatePanes(t *testing.T) {
 	}
 	if charts == 0 || controls == 0 {
 		t.Fatalf("panes = %d charts, %d controls; want both filled", charts, controls)
+	}
+}
+
+func TestSettingsPageUsesFocusedNavigationGroups(t *testing.T) {
+	groups := recordedApp(t).settingsPage().SettingsGroups()
+	want := []string{"general", "accounts", "alerts-data", "appearance"}
+	if len(groups) != len(want) {
+		t.Fatalf("groups = %+v, want %v", groups, want)
+	}
+	for i, id := range want {
+		if groups[i].ID != id || groups[i].Title == "" || len(groups[i].Sections) == 0 {
+			t.Errorf("group %d = %+v, want populated %q", i, groups[i], id)
+		}
+	}
+}
+
+func TestSettingsPageOffersProfileOrderingControls(t *testing.T) {
+	a := recordedApp(t)
+	a.cfg.Sources.Codex.Profiles = []config.Profile{
+		{Path: "~/.codex-w", Label: "Work"},
+		{Path: "~/.codex-p", Label: "Personal"},
+	}
+	ids := map[string]bool{}
+	for _, row := range allRows(a.settingsPage()) {
+		ids[row.ID] = true
+	}
+	for _, want := range []string{"profile:move:0:down", "profile:move:1:up"} {
+		if !ids[want] {
+			t.Errorf("settings page is missing %q", want)
+		}
+	}
+	for _, impossible := range []string{"profile:move:0:up", "profile:move:1:down"} {
+		if ids[impossible] {
+			t.Errorf("settings page offered impossible move %q", impossible)
+		}
 	}
 }
 
@@ -187,7 +222,7 @@ func TestSettingsPageRowsAreAllHandled(t *testing.T) {
 		idHistory: true, idUpdateCheck: true, idLimitAlerts: true,
 		idRefresh: true,
 	}
-	prefixes := []string{idModePfx, idSourcePfx, idLimitPfx, idLanguagePfx}
+	prefixes := []string{idModePfx, idSourcePfx, idLimitPfx, idLanguagePfx, "setting:", "profile:", "claude-profile:"}
 
 	for _, section := range recordedApp(t).settingsPage().Sections {
 		for _, row := range section.Rows {
@@ -211,7 +246,9 @@ func TestSettingsPageRowsAreAllHandled(t *testing.T) {
 // Nothing arriving over a socket should be able to close the app.
 func TestApplySettingRefusesQuit(t *testing.T) {
 	a := &app{cfg: config.Default(), backend: &stubBackend{}, refresh: make(chan struct{}, 1)}
-	a.applySetting(idQuit)
+	if err := a.applySetting(idQuit, ""); err != nil {
+		t.Fatal(err)
+	}
 	if got := a.backend.(*stubBackend).quitCount(); got != 0 {
 		t.Fatalf("quit count = %d; the settings page must not be able to quit", got)
 	}

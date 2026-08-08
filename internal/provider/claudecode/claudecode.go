@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"io/fs"
 	"os"
@@ -42,7 +43,13 @@ const blockDuration = 5 * time.Hour
 
 // Provider aggregates transcripts incrementally across refreshes.
 type Provider struct {
-	cfg *config.ClaudeCode
+	cfg            *config.ClaudeCode
+	configDir      string
+	usageCacheFile string
+	projectsPath   string
+	label          string
+	short          string
+	defaultProfile bool
 
 	// offsets tracks how far each transcript has been consumed. Transcripts are
 	// append-only, so a steady-state refresh reads only the new bytes.
@@ -78,13 +85,97 @@ type entry struct {
 	tokens   model.Tokens
 }
 
-// New builds a provider bound to the given config section.
+// New builds the first configured provider. It remains for callers that only
+// need the default profile; the app uses Providers to keep accounts separate.
 func New(cfg *config.ClaudeCode) *Provider {
-	return &Provider{
-		cfg:     cfg,
-		offsets: map[string]int64{},
-		seen:    map[string]time.Time{},
+	profiles := Providers(cfg)
+	if len(profiles) > 0 {
+		return profiles[0]
 	}
+	return newProvider(cfg, config.Profile{Path: "auto"}, "", true, true)
+}
+
+// Providers builds one provider per distinct Claude configuration directory.
+func Providers(cfg *config.ClaudeCode) []*Provider {
+	profiles := cfg.Profiles
+	if len(profiles) == 0 {
+		profiles = []config.Profile{{Path: "auto"}}
+	}
+	seen := map[string]bool{}
+	out := make([]*Provider, 0, len(profiles))
+	for index, profile := range profiles {
+		dir := resolveConfigDir(profile.Path)
+		abs, err := filepath.Abs(dir)
+		if err == nil {
+			dir = abs
+		}
+		if dir == "" || seen[dir] {
+			continue
+		}
+		seen[dir] = true
+		standard := profile.Path == "auto" || profile.Path == "" || isStandardClaudeDir(dir)
+		out = append(out, newProvider(cfg, profile, dir, index == 0, standard))
+	}
+	return out
+}
+
+func newProvider(cfg *config.ClaudeCode, profile config.Profile, dir string, first, defaultProfile bool) *Provider {
+	label := profile.Label
+	if label == "" {
+		if defaultProfile {
+			label = "Claude Code"
+		} else {
+			label = "Claude Code (" + shortenHome(dir) + ")"
+		}
+	}
+	cache := dir + ".json"
+	projects := filepath.Join(dir, "projects")
+	// These pre-profile settings remain meaningful for the first account.
+	if first && cfg.UsageCacheFile != "" {
+		cache = expandHome(cfg.UsageCacheFile)
+	}
+	if first && cfg.ProjectsDir != "" {
+		projects = expandHome(cfg.ProjectsDir)
+	}
+	return &Provider{
+		cfg: cfg, configDir: dir, usageCacheFile: cache, projectsPath: projects,
+		label: label, short: profile.Icon(), defaultProfile: defaultProfile,
+		offsets: map[string]int64{}, seen: map[string]time.Time{},
+	}
+}
+
+func resolveConfigDir(path string) string {
+	if path != "" && path != "auto" {
+		return expandHome(path)
+	}
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return expandHome(dir)
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude")
+}
+
+func isStandardClaudeDir(dir string) bool {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false
+	}
+	standard, err := filepath.Abs(filepath.Join(home, ".claude"))
+	if err != nil {
+		return false
+	}
+	return filepath.Clean(dir) == filepath.Clean(standard)
+}
+
+func shortenHome(path string) string {
+	home, err := os.UserHomeDir()
+	if err == nil && (path == home || strings.HasPrefix(path, home+string(filepath.Separator))) {
+		return "~" + strings.TrimPrefix(path, home)
+	}
+	return path
 }
 
 // Available reports whether Claude Code itself is installed. Configuration can
@@ -96,7 +187,14 @@ func Available(cfg *config.ClaudeCode) bool {
 }
 
 // ID implements provider.Provider.
-func (p *Provider) ID() string { return "claude-code" }
+func (p *Provider) ID() string {
+	if p.defaultProfile {
+		return model.SourceClaudeCode
+	}
+	sum := fnv.New32a()
+	_, _ = sum.Write([]byte(p.configDir))
+	return fmt.Sprintf("%s:%s-%08x", model.SourceClaudeCode, filepath.Base(p.configDir), sum.Sum32())
+}
 
 // transcript line shape, narrowed to the fields we need.
 type line struct {
@@ -118,32 +216,37 @@ type line struct {
 // Collect implements provider.Provider.
 func (p *Provider) Collect(now time.Time) model.SourceStatus {
 	st := model.SourceStatus{
-		ID:        "claude-code",
-		Name:      "Claude Code",
+		ID:        p.ID(),
+		Name:      p.label,
+		Short:     p.short,
 		Windows:   map[model.Window]model.WindowStatus{},
 		Tokens:    map[model.Window]model.Tokens{},
 		UpdatedAt: now,
 	}
 
 	var reported map[model.Window]model.WindowStatus
-	var cacheErr error
+	cached, cacheAge, cacheResetExpired, cacheErr := p.collectCached(now)
+	maxCacheAge := time.Duration(p.cfg.UsageCommand.StaleAfterSeconds) * time.Second
+	cacheFresh := len(cached) > 0 && !cacheResetExpired &&
+		(maxCacheAge <= 0 || cacheAge <= maxCacheAge)
 	origin := "Claude usage cache"
 
-	// A user-requested refresh asks the service; a scheduled one reads the
-	// cache, which costs nothing.
-	if p.authoritative {
+	// Fresh cache data is the cheap normal path. Once it ages out, ask /usage
+	// for a current reading; if that fails, retain the still-active cached
+	// buckets until their reset time instead of replacing useful data with '?'.
+	if p.authoritative || !cacheFresh {
 		p.authoritative = false
 		reported, origin = p.collectReported(now), "/usage"
 	}
-	if len(reported) == 0 {
-		reported, cacheErr = p.collectCached(now)
-		origin = "Claude usage cache"
-	}
-	if len(reported) == 0 {
-		reported = p.collectReported(now)
-		origin = "/usage"
+	if len(reported) == 0 && len(cached) > 0 {
+		reported, origin = cached, "Claude usage cache"
 	}
 	switch {
+	case len(reported) > 0 && origin == "Claude usage cache" && !cacheFresh && p.reportErr != "":
+		st.Note = fmt.Sprintf("Claude usage cache (%s old); /usage: %s",
+			cacheAge.Round(time.Minute), p.reportErr)
+	case len(reported) > 0 && origin == "Claude usage cache" && !cacheFresh:
+		st.Note = fmt.Sprintf("Claude usage cache (%s old)", cacheAge.Round(time.Minute))
 	case len(reported) > 0 && origin == "Claude usage cache":
 		st.Note = "reported by Claude usage cache"
 	case len(reported) > 0 && p.reportErr != "":
@@ -237,7 +340,11 @@ func (p *Provider) runAndStore(now time.Time) error {
 		time.Duration(p.cfg.UsageCommand.TimeoutSeconds)*time.Second)
 	defer cancel()
 
-	text, err := runUsage(ctx, p.resolvedPath)
+	// An auto profile must behave exactly like invoking `claude` in the user's
+	// shell. In particular, do not turn the implicit standard location into an
+	// explicit CLAUDE_CONFIG_DIR: Claude Code can treat those authentication
+	// contexts differently. Explicit profiles still need an isolated env.
+	text, err := runUsage(ctx, p.resolvedPath, p.usageCommandConfigDir())
 	if err != nil {
 		// The path may have gone stale (an update moved the binary); re-resolve
 		// on the next attempt.
@@ -252,15 +359,15 @@ func (p *Provider) runAndStore(now time.Time) error {
 	return nil
 }
 
-func (p *Provider) projectsDir() string {
-	if p.cfg.ProjectsDir != "" {
-		return expandHome(p.cfg.ProjectsDir)
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
+func (p *Provider) usageCommandConfigDir() string {
+	if p.defaultProfile {
 		return ""
 	}
-	return filepath.Join(home, ".claude", "projects")
+	return p.configDir
+}
+
+func (p *Provider) projectsDir() string {
+	return p.projectsPath
 }
 
 func expandHome(p string) string {

@@ -3,7 +3,7 @@ package render
 import "image/color"
 
 // The battery bat. It is the app icon on both platforms, the toast icon on
-// Windows, and — with a different face — the mascot on the settings page.
+// Windows, and the mascot on the settings page.
 //
 // The sprite lives here rather than in the icon generator so that the drawn
 // mascot and the shipped icon cannot drift apart: they are the same animal.
@@ -22,38 +22,9 @@ var SpritePalette = map[byte]color.NRGBA{
 	'a': {R: 0xff, G: 0xad, B: 0x14, A: 0xff}, // cheeks
 }
 
-// Face is the expression the bat wears.
-type Face int
-
-const (
-	// FaceContent is the shipped icon's expression, and the one for a limit
-	// with room to spare.
-	FaceContent Face = iota
-	// FaceWorried is headroom inside the warning band.
-	FaceWorried
-	// FaceAlarmed is headroom inside the critical band.
-	FaceAlarmed
-	// FaceBlank is nothing reported, so nothing to feel about it.
-	FaceBlank
-)
-
-// FaceFor picks the expression from the same thresholds the battery colours
-// itself by, so the two never disagree.
-func FaceFor(remaining float64, known bool, p Palette) Face {
-	switch {
-	case !known:
-		return FaceBlank
-	case remaining <= p.CriticalBelow:
-		return FaceAlarmed
-	case remaining <= p.WarnBelow:
-		return FaceWorried
-	default:
-		return FaceContent
-	}
-}
-
-// Sprite draws the bat wearing the given face.
-func Sprite(face Face) [SpriteSize][SpriteSize]byte {
+// Sprite draws the mascot. Its expression is deliberately independent of
+// usage: consuming a tool allowance is not something the character judges.
+func Sprite() [SpriteSize][SpriteSize]byte {
 	var p [SpriteSize][SpriteSize]byte
 	fillRaw := func(x0, y0, x1, y1 int, value byte) {
 		for y := y0; y < y1; y++ {
@@ -101,60 +72,24 @@ func Sprite(face Face) [SpriteSize][SpriteSize]byte {
 	fill(19, 23, 22, 24, '#')
 	fill(19, 24, 21, 25, '#')
 
-	// Charge bars. A worried bat has fewer of them, which is the one place the
-	// expression and the reading say the same thing twice on purpose.
-	bars := 3
-	switch face {
-	case FaceWorried:
-		bars = 2
-	case FaceAlarmed:
-		bars = 1
-	case FaceBlank:
-		bars = 0
-	}
-	for i := 0; i < bars; i++ {
+	// These bars belong to the logo, not the live usage reading.
+	for i := 0; i < 3; i++ {
 		x := 9 + i*2
 		fill(x, 13, x+1, 20, 'g')
 	}
 
-	drawFace(fillRaw, fill, face)
+	drawFace(fillRaw, fill)
 	return p
 }
 
 // drawFace places the eyes and mouth. They sit on the half-pixel grid, which
 // is why they are the only part drawn in raw dots: a mouth on the base grid
 // would be twice as wide as the face has room for.
-func drawFace(fillRaw, fill func(x0, y0, x1, y1 int, value byte), face Face) {
-	// Cheeks stay put; they are part of the animal rather than the mood.
+func drawFace(fillRaw, fill func(x0, y0, x1, y1 int, value byte)) {
 	fill(15, 17, 16, 18, 'a')
 	fill(23, 17, 24, 18, 'a')
-
-	switch face {
-	case FaceBlank:
-		// Eyes closed. Nothing is being reported, so the bat has nothing to
-		// look at rather than something to worry about.
-		fillRaw(31, 31, 35, 33, '#')
-		fillRaw(43, 31, 47, 33, '#')
-		fillRaw(37, 35, 41, 37, '#')
-		return
-
-	case FaceWorried:
-		// The same eyes, and the smile flattened out.
-		fillRaw(32, 29, 34, 33, '#')
-		fillRaw(44, 29, 46, 33, '#')
-		fillRaw(36, 35, 42, 37, '#')
-		return
-
-	case FaceAlarmed:
-		// Wide eyes and an open mouth.
-		fillRaw(31, 28, 35, 33, '#')
-		fillRaw(43, 28, 47, 33, '#')
-		fillRaw(36, 34, 42, 38, '#')
-		return
-	}
-
-	// FaceContent: the shipped icon. The smile is shifted half a base pixel
-	// left so its centre sits exactly between the eyes.
+	// The smile is shifted half a base pixel left so its centre sits exactly
+	// between the eyes.
 	fillRaw(32, 29, 34, 33, '#')
 	fillRaw(44, 29, 46, 33, '#')
 	fillRaw(35, 34, 37, 36, '#')

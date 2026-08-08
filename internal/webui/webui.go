@@ -39,7 +39,17 @@ const (
 	KindText
 	// KindChart is a rendered chart, inlined as SVG.
 	KindChart
+	// KindInput edits a number, path, short label or color.
+	KindInput
+	// KindSelect chooses one value from a compact list.
+	KindSelect
 )
+
+// Option is one choice in a KindSelect row.
+type Option struct {
+	Value string
+	Label string
+}
 
 // Row is one setting.
 type Row struct {
@@ -59,28 +69,41 @@ type Row struct {
 	// SVG is the chart markup for a KindChart row. It is inlined rather than
 	// escaped, so it must come from the renderer and never from user input.
 	SVG template.HTML
+	// Value and the remaining fields describe editable form controls.
+	Value       string
+	InputType   string
+	Min         string
+	Max         string
+	Step        string
+	Placeholder string
+	SubmitLabel string
+	Options     []Option
 }
 
 // Section is a titled block of rows.
 type Section struct {
 	Title string
 	Rows  []Row
-	// Aside puts the section in the narrow column beside the charts. Settings
-	// go there: they are what you occasionally come to change, next to the
-	// numbers you came to look at.
+	// Aside marks the section as settings content rather than overview content.
 	Aside bool
+	// Category groups settings into one navigable panel.
+	CategoryID    string
+	CategoryTitle string
 	// Grid flows the rows as tiles rather than a list, which is what lets
 	// several charts share a row instead of each taking the full width.
 	Grid bool
 }
 
-// Page is the screen. Everything is on one of them: the charts and the
-// settings sit side by side, so changing a setting and seeing what it did does
-// not mean navigating between two places.
+// Page is the screen. Overview charts and categorized settings are separate
+// tabs on the same local page.
 type Page struct {
-	Title    string
-	Version  string
-	Sections []Section
+	Title          string
+	Version        string
+	OverviewLabel  string
+	SettingsLabel  string
+	SavedLabel     string
+	SaveErrorLabel string
+	Sections       []Section
 	// Footer is a closing line, typically the project link.
 	Footer     string
 	FooterHref string
@@ -90,11 +113,57 @@ type Page struct {
 	Mascot template.HTML
 }
 
+// SettingsGroup is one tab of related settings sections.
+type SettingsGroup struct {
+	ID       string
+	Title    string
+	Sections []Section
+}
+
 // Main returns the sections that fill the wide column.
 func (p Page) Main() []Section { return p.column(false) }
 
-// Aside returns the sections that fill the narrow column.
+// Aside returns all settings sections, before category grouping.
 func (p Page) Aside() []Section { return p.column(true) }
+
+// SettingsGroups returns setting sections grouped in their declared order.
+func (p Page) SettingsGroups() []SettingsGroup {
+	var groups []SettingsGroup
+	indexes := map[string]int{}
+	for _, section := range p.Sections {
+		if !section.Aside {
+			continue
+		}
+		id := section.CategoryID
+		if id == "" {
+			id = "general"
+		}
+		index, ok := indexes[id]
+		if !ok {
+			index = len(groups)
+			indexes[id] = index
+			groups = append(groups, SettingsGroup{ID: id, Title: section.CategoryTitle})
+		}
+		groups[index].Sections = append(groups[index].Sections, section)
+	}
+	// Keep the main navigation stable even if page construction order changes.
+	var ordered []SettingsGroup
+	used := map[string]bool{}
+	for _, id := range []string{"general", "accounts", "alerts-data", "appearance"} {
+		for _, group := range groups {
+			if group.ID == id {
+				ordered = append(ordered, group)
+				used[id] = true
+			}
+		}
+	}
+	for _, group := range groups {
+		if !used[group.ID] {
+			ordered = append(ordered, group)
+		}
+	}
+	return ordered
+}
 
 func (p Page) column(aside bool) []Section {
 	var out []Section
@@ -113,7 +182,7 @@ type Server struct {
 	Render func() Page
 	// Activate applies the row the user clicked and returns once the change is
 	// saved, so the redirect that follows renders the new state.
-	Activate func(id string)
+	Activate func(id, value string) error
 	// IdleTimeout stops the listener after this long with no requests. Zero
 	// picks a sensible default.
 	IdleTimeout time.Duration
@@ -335,7 +404,10 @@ func (s *Server) handler() http.Handler {
 		if id := strings.TrimSpace(r.PostForm.Get("id")); id != "" && s.Activate != nil {
 			// Activate returns once the change is saved, so whichever answer
 			// goes back below renders the new state rather than the old one.
-			s.Activate(id)
+			if err := s.Activate(id, r.PostForm.Get("value")); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 		if r.Header.Get("X-Requested-With") == "fetch" {
 			// The script fetches the page itself afterwards; sending it a

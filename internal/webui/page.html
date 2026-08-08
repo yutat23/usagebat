@@ -34,7 +34,7 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  padding: 2.5rem 1.25rem 4rem;
+  padding: 1.5rem 1rem 2.5rem;
   background: var(--bg);
   color: var(--fg);
   font: 15px/1.55 -apple-system, "Segoe UI Variable Text", "Segoe UI", system-ui,
@@ -45,62 +45,119 @@ header {
   display: flex;
   align-items: center;
   gap: .75rem;
-  margin-bottom: 1.75rem;
+  margin-bottom: 1rem;
 }
 /* The bat is the app icon rather than a chart, so it stays pixel art and asks
    the browser not to smooth it. */
 .mascot svg {
   display: block;
-  width: 2.6rem;
-  height: 2.6rem;
+  width: 2.25rem;
+  height: 2.25rem;
   image-rendering: pixelated;
 }
 h1 {
-  font-size: 1.35rem;
+  font-size: 1.25rem;
   font-weight: 650;
   margin: 0;
   letter-spacing: -0.01em;
 }
 h1 .version { color: var(--dim); font-size: .8rem; font-weight: 400; margin-left: .6rem; }
-/* Charts and settings sit side by side. On a narrow window the settings drop
-   below the charts rather than squeezing both into unreadable columns. */
-.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 2rem; }
-@media (min-width: 60rem) {
-  .layout { grid-template-columns: minmax(0, 1fr) 19rem; }
-}
 .col { min-width: 0; }
-section { margin-bottom: 2.25rem; }
+section { margin-bottom: 1.5rem; }
+.tabbar {
+  display: none;
+  gap: .35rem;
+  padding: .25rem;
+  margin: 0 0 1rem;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--raised);
+}
+.js .tabbar { display: flex; }
+.tab-button {
+  flex: 1 0 auto;
+  padding: .42rem .7rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dim);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tab-button:hover { background: var(--hover); color: var(--fg); }
+.tab-button[aria-selected="true"] {
+  background: var(--bg);
+  color: var(--fg);
+  box-shadow: 0 1px 3px rgb(0 0 0 / .12);
+}
+.tab-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.save-status {
+  display: none;
+  min-height: 1.15rem;
+  margin: -.65rem 0 .4rem;
+  color: var(--accent);
+  font-size: .85rem;
+  text-align: right;
+}
+.js .save-status { display: block; }
+.save-status.error { color: #be123c; }
+.tab-panel { margin-bottom: 1.25rem; }
+.js .tab-panel { display: none; }
+.js .tab-panel.active { display: block; }
+.panel-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.settings-grid {
+  columns: 18rem;
+  column-gap: 1rem;
+}
+.settings-grid section {
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 1rem;
+  break-inside: avoid;
+}
 h2 {
   font-size: .78rem;
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: .07em;
   color: var(--dim);
-  margin: 0 0 .6rem;
+  margin: 0 0 .4rem;
 }
 .rows {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
   background: var(--raised);
 }
 .rows > * { border-top: 1px solid var(--line); }
 .rows > *:first-child { border-top: none; }
 .note {
-  padding: .55rem .95rem .7rem;
+  padding: .4rem .75rem .5rem;
   color: var(--dim);
   font-size: .85rem;
 }
-.note.indent, .choice.indent { padding-left: 2.4rem; }
+.note.indent, .choice.indent { padding-left: 2.15rem; }
 
 /* A row is a submit button: the click posts the row's id and the server
    decides what it means, exactly as a menu click does. */
 .choice {
   display: flex;
   align-items: center;
-  gap: .7rem;
+  gap: .6rem;
   width: 100%;
-  padding: .65rem .95rem;
+  padding: .48rem .75rem;
   background: none;
   border: none;
   border-top: 1px solid var(--line);
@@ -114,8 +171,8 @@ h2 {
 .choice:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .mark {
   flex: none;
-  width: 1.05rem;
-  height: 1.05rem;
+  width: 1rem;
+  height: 1rem;
   border: 1.5px solid var(--dim);
   display: grid;
   place-items: center;
@@ -141,7 +198,7 @@ h2 {
 .action {
   display: block;
   width: 100%;
-  padding: .65rem .95rem;
+  padding: .48rem .75rem;
   background: none;
   border: none;
   border-top: 1px solid var(--line);
@@ -154,6 +211,45 @@ h2 {
 .action:first-child { border-top: none; }
 .action:hover { background: var(--hover); }
 .action:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.setting-form {
+  display: grid;
+  grid-template-columns: minmax(7rem, .8fr) minmax(0, 1.2fr) auto;
+  gap: .4rem .55rem;
+  align-items: center;
+  padding: .48rem .75rem;
+}
+.setting-form label { color: var(--dim); font-size: .82rem; }
+.setting-form input, .setting-form select {
+  min-width: 0;
+  width: 100%;
+  padding: .36rem .5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+}
+.setting-form input[type="color"] { height: 1.9rem; padding: .18rem; }
+.setting-form input:focus-visible, .setting-form select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.save {
+  padding: .45rem .7rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+.save:hover { background: var(--hover); }
+.js .setting-form { grid-template-columns: minmax(7rem, .8fr) minmax(0, 1.2fr); }
+.js .setting-form .save { display: none; }
+@media (max-width: 32rem) {
+  .setting-form, .js .setting-form { grid-template-columns: minmax(0, 1fr); }
+  .setting-form label { grid-column: 1; }
+}
 /* Charts tile instead of stacking: at full width each one was as tall as the
    window, which is a lot of room for a line that only has to show a shape. */
 .rows.grid {
@@ -206,14 +302,33 @@ body.busy { cursor: progress; }
     <h1>{{.Title}}{{if .Version}}<span class="version">{{.Version}}</span>{{end}}</h1>
   </header>
 
-  <div class="layout">
+  <nav class="tabbar" role="tablist" aria-label="{{.SettingsLabel}}"
+       data-saved-label="{{.SavedLabel}}" data-save-error-label="{{.SaveErrorLabel}}">
+    <button class="tab-button" id="tab-overview" type="button" role="tab"
+            aria-selected="true" aria-controls="panel-overview" data-tab-target="overview">{{.OverviewLabel}}</button>
+    {{range .SettingsGroups}}
+      <button class="tab-button" id="tab-{{.ID}}" type="button" role="tab"
+              aria-selected="false" aria-controls="panel-{{.ID}}" data-tab-target="{{.ID}}">{{.Title}}</button>
+    {{end}}
+  </nav>
+  <div class="save-status" id="settings-status" role="status" aria-live="polite"></div>
+
+  <div class="tab-panel active" id="panel-overview" role="tabpanel"
+       aria-labelledby="tab-overview" data-tab-panel="overview">
     <div class="col main">
       {{range .Main}}{{template "section" .}}{{end}}
     </div>
-    <aside class="col side">
-      {{range .Aside}}{{template "section" .}}{{end}}
-    </aside>
   </div>
+
+  {{range .SettingsGroups}}
+    <div class="tab-panel" id="panel-{{.ID}}" role="tabpanel"
+         aria-labelledby="tab-{{.ID}}" data-tab-panel="{{.ID}}">
+      <h2 class="panel-title">{{.Title}}</h2>
+      <div class="settings-grid">
+        {{range .Sections}}{{template "section" .}}{{end}}
+      </div>
+    </div>
+  {{end}}
 
   {{if .Footer}}
   <footer>
@@ -230,8 +345,28 @@ body.busy { cursor: progress; }
 <section>
   {{if .Title}}<h2>{{.Title}}</h2>{{end}}
   <div class="rows{{if .Grid}} grid{{end}}">
-    {{range .Rows}}
-      {{if eq .Kind 4}}
+    {{range .Rows}}{{$row := .}}
+      {{if eq .Kind 6}}
+        <form class="setting-form" method="post" action="/apply" data-async>
+          <input type="hidden" name="id" value="{{.ID}}">
+          <label for="field-{{.ID}}">{{.Label}}</label>
+          <select id="field-{{.ID}}" name="value">
+            {{range .Options}}<option value="{{.Value}}"{{if eq .Value $row.Value}} selected{{end}}>{{.Label}}</option>{{end}}
+          </select>
+          <button class="save" type="submit">{{.SubmitLabel}}</button>
+        </form>
+        {{if .Detail}}<div class="note">{{.Detail}}</div>{{end}}
+      {{else if eq .Kind 5}}
+        <form class="setting-form" method="post" action="/apply" data-async>
+          <input type="hidden" name="id" value="{{.ID}}">
+          <label for="field-{{.ID}}">{{.Label}}</label>
+          <input id="field-{{.ID}}" name="value" type="{{.InputType}}" value="{{.Value}}"
+                 {{if .Min}}min="{{.Min}}"{{end}} {{if .Max}}max="{{.Max}}"{{end}}
+                 {{if .Step}}step="{{.Step}}"{{end}} {{if .Placeholder}}placeholder="{{.Placeholder}}"{{end}}>
+          <button class="save" type="submit">{{.SubmitLabel}}</button>
+        </form>
+        {{if .Detail}}<div class="note">{{.Detail}}</div>{{end}}
+      {{else if eq .Kind 4}}
         <figure class="chart">
           {{if .Label}}<figcaption>{{.Label}}</figcaption>{{end}}
           {{.SVG}}

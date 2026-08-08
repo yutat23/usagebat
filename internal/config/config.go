@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -42,7 +44,7 @@ func (m DisplayMode) Title() string {
 
 // SchemaVersion is the config layout this build writes. Bumping it makes
 // migrate rewrite the file once, so an added setting appears with its default.
-const SchemaVersion = 7
+const SchemaVersion = 8
 
 // Config is the on-disk configuration.
 type Config struct {
@@ -161,10 +163,15 @@ type Sources struct {
 type ClaudeCode struct {
 	Enabled      bool         `json:"enabled"`
 	UsageCommand UsageCommand `json:"usageCommand"`
+	// Profiles lists the Claude configuration directories to track. "auto"
+	// resolves to $CLAUDE_CONFIG_DIR, or ~/.claude. Each directory represents
+	// an independently authenticated account.
+	Profiles []Profile `json:"profiles"`
 	// UsageCacheFile is Claude Code's locally cached service usage response.
-	// Empty means ~/.claude.json.
+	// It is retained as a legacy override for the first profile.
 	UsageCacheFile string `json:"usageCacheFile"`
-	ProjectsDir    string `json:"projectsDir"`
+	// ProjectsDir is retained as a legacy override for the first profile.
+	ProjectsDir string `json:"projectsDir"`
 	// WeeklyMode and MonthlyMode bound the periods the token tallies are summed
 	// over. They no longer decide any percentage.
 	WeeklyMode  string  `json:"weeklyMode"`  // rolling | calendar
@@ -181,8 +188,9 @@ type UsageCommand struct {
 	// MinIntervalSeconds throttles the subprocess independently of the refresh
 	// interval, so repeated manual refreshes cannot spawn a process per click.
 	MinIntervalSeconds int `json:"minIntervalSeconds"`
-	// StaleAfterSeconds is how long a previous good reading stays usable when a
-	// run fails, so a transient error does not make the battery jump.
+	// StaleAfterSeconds is when cached data should trigger a live /usage query.
+	// A still-active cache may remain as a clearly aged fallback if that query
+	// fails; an earlier good /usage result is discarded after the same period.
 	StaleAfterSeconds int `json:"staleAfterSeconds"`
 }
 
@@ -218,6 +226,21 @@ type Profile struct {
 	// Short is the one or two characters the icon has room for. Empty derives
 	// one from Label.
 	Short string `json:"short"`
+}
+
+// Editable is the user-facing subset of Config shown on the settings page.
+// It is a detached copy so the browser renderer never races a setting write.
+// Provider command tuning and token weights deliberately stay in config.json
+// as advanced settings.
+type Editable struct {
+	RefreshSeconds int
+	Icon           Icon
+	Colors         Colors
+	Notifications  Notifications
+	UpdateCheck    UpdateCheck
+	History        History
+	ClaudeProfiles []Profile
+	CodexProfiles  []Profile
 }
 
 // Icon returns the abbreviation to draw, at most two characters.
@@ -276,7 +299,8 @@ func Default() *Config {
 		History:     History{Enabled: true, IntervalMinutes: 5, RetentionDays: 30},
 		Sources: Sources{
 			ClaudeCode: ClaudeCode{
-				Enabled: true,
+				Enabled:  true,
+				Profiles: []Profile{{Path: "auto"}},
 				UsageCommand: UsageCommand{
 					Enabled:            true,
 					TimeoutSeconds:     20,
@@ -360,8 +384,7 @@ func Load() (*Config, error) {
 // migrate updates only values that are known to be an old shipped default.
 // V4 made period selection independent per service. V5 added separate light
 // and dark palettes. V6 added localization and reset-expiry notifications.
-// V7 added the update check, which needs no conversion: an absent key leaves
-// the shipped default, and that default is off.
+// V7 added the update check. V8 added independently named Claude profiles.
 func (c *Config) migrate(data []byte) bool {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(data, &raw) != nil {
@@ -396,6 +419,9 @@ func (c *Config) migrate(data []byte) bool {
 		c.migrateLegacyColors()
 	}
 	c.migrateCodexHomes()
+	if len(c.Sources.ClaudeCode.Profiles) == 0 {
+		c.Sources.ClaudeCode.Profiles = []Profile{{Path: "auto"}}
+	}
 	c.Version = SchemaVersion
 	return true
 }
@@ -525,6 +551,9 @@ func (c *Config) normalise() {
 	// A config that names no profile still tracks the standard location; an
 	// empty list would silently drop Codex off the icon.
 	c.migrateCodexHomes()
+	if len(c.Sources.ClaudeCode.Profiles) == 0 {
+		c.Sources.ClaudeCode.Profiles = []Profile{{Path: "auto"}}
+	}
 	if len(c.Sources.Codex.Profiles) == 0 {
 		c.Sources.Codex.Profiles = []Profile{{Path: "auto"}}
 	}
@@ -886,6 +915,290 @@ func (c *Config) SetLanguage(language string) error {
 	c.Language = language
 	c.mu.Unlock()
 	return c.Save()
+}
+
+// EditableSettings returns the settings intended for ordinary desktop use.
+func (c *Config) EditableSettings() Editable {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := Editable{
+		RefreshSeconds: c.RefreshSeconds,
+		Icon:           c.Icon,
+		Colors:         c.Colors,
+		Notifications:  c.Notifications,
+		UpdateCheck:    c.UpdateCheck,
+		History:        c.History,
+		ClaudeProfiles: append([]Profile(nil), c.Sources.ClaudeCode.Profiles...),
+		CodexProfiles:  append([]Profile(nil), c.Sources.Codex.Profiles...),
+	}
+	out.Notifications.BankedResetExpiry.ThresholdHours = append([]int(nil),
+		c.Notifications.BankedResetExpiry.ThresholdHours...)
+	out.Notifications.LimitThresholds.Percents = append([]int(nil),
+		c.Notifications.LimitThresholds.Percents...)
+	return out
+}
+
+// SetEditableSetting validates and persists one value from the settings page.
+func (c *Config) SetEditableSetting(key, value string) error {
+	value = strings.TrimSpace(value)
+	c.mu.Lock()
+	var err error
+	switch key {
+	case "refreshSeconds":
+		var parsed int
+		parsed, err = boundedInt(value, 5, 3600)
+		if err == nil {
+			c.RefreshSeconds = parsed
+		}
+	case "icon.windowsLayout":
+		if value != "stack" && value != "single" {
+			err = fmt.Errorf("invalid Windows icon layout %q", value)
+		} else {
+			c.Icon.WindowsLayout = value
+		}
+	case "colors.warnBelow":
+		var parsed float64
+		parsed, err = boundedFloat(value, 1, 100)
+		if err == nil {
+			c.Colors.WarnBelow = parsed
+		}
+	case "colors.criticalBelow":
+		var parsed float64
+		parsed, err = boundedFloat(value, 1, 100)
+		if err == nil {
+			c.Colors.CriticalBelow = parsed
+		}
+	case "notifications.bankedResetExpiry.thresholdHours":
+		var parsed []int
+		parsed, err = positiveIntList(value, 1, 8760)
+		if err == nil {
+			c.Notifications.BankedResetExpiry.ThresholdHours = parsed
+		}
+	case "notifications.limitThresholds.percents":
+		var parsed []int
+		parsed, err = positiveIntList(value, 1, 100)
+		if err == nil {
+			c.Notifications.LimitThresholds.Percents = parsed
+		}
+	case "history.intervalMinutes":
+		var parsed int
+		parsed, err = boundedInt(value, 1, 1440)
+		if err == nil {
+			c.History.IntervalMinutes = parsed
+		}
+	case "history.retentionDays":
+		var parsed int
+		parsed, err = boundedInt(value, 1, 3650)
+		if err == nil {
+			c.History.RetentionDays = parsed
+		}
+	case "updateCheck.intervalHours":
+		var parsed int
+		parsed, err = boundedInt(value, 1, 168)
+		if err == nil {
+			c.UpdateCheck.IntervalHours = parsed
+		}
+	default:
+		err = c.setEditableColorOrProfile(key, value)
+	}
+	c.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	return c.Save()
+}
+
+func (c *Config) setEditableColorOrProfile(key, value string) error {
+	parts := strings.Split(key, ".")
+	if len(parts) == 3 && parts[0] == "colors" {
+		if !validHexColor(value) {
+			return fmt.Errorf("invalid color %q", value)
+		}
+		var theme *ThemeColors
+		switch parts[1] {
+		case "light":
+			theme = &c.Colors.Light
+		case "dark":
+			theme = &c.Colors.Dark
+		default:
+			return fmt.Errorf("unknown color theme %q", parts[1])
+		}
+		switch parts[2] {
+		case "good":
+			theme.Good = value
+		case "warn":
+			theme.Warn = value
+		case "critical":
+			theme.Critical = value
+		case "unknown":
+			theme.Unknown = value
+		case "claude":
+			theme.Claude = value
+		case "codex":
+			theme.Codex = value
+		case "period":
+			theme.Period = value
+		case "textOnFill":
+			theme.TextOnFill = value
+		default:
+			return fmt.Errorf("unknown color %q", parts[2])
+		}
+		return nil
+	}
+	if len(parts) == 4 && (parts[0] == "claude" || parts[0] == "codex") && parts[1] == "profiles" {
+		name := "Codex"
+		profiles := &c.Sources.Codex.Profiles
+		if parts[0] == "claude" {
+			name = "Claude"
+			profiles = &c.Sources.ClaudeCode.Profiles
+		}
+		index, err := strconv.Atoi(parts[2])
+		if err != nil || index < 0 || index >= len(*profiles) {
+			return fmt.Errorf("invalid %s profile index %q", name, parts[2])
+		}
+		profile := &(*profiles)[index]
+		switch parts[3] {
+		case "path":
+			if value == "" {
+				return fmt.Errorf("%s profile path cannot be empty", name)
+			}
+			profile.Path = value
+		case "label":
+			profile.Label = value
+		case "short":
+			if len([]rune(value)) > 2 {
+				return fmt.Errorf("%s profile abbreviation must be at most two characters", name)
+			}
+			profile.Short = value
+		default:
+			return fmt.Errorf("unknown %s profile field %q", name, parts[3])
+		}
+		return nil
+	}
+	return fmt.Errorf("unknown editable setting %q", key)
+}
+
+// AddClaudeProfile appends a separately authenticated Claude configuration.
+func (c *Config) AddClaudeProfile() error {
+	c.mu.Lock()
+	c.Sources.ClaudeCode.Profiles = append(c.Sources.ClaudeCode.Profiles, Profile{Path: "auto"})
+	c.mu.Unlock()
+	return c.Save()
+}
+
+// RemoveClaudeProfile removes one profile while retaining at least one source.
+func (c *Config) RemoveClaudeProfile(index int) error {
+	c.mu.Lock()
+	if index < 0 || index >= len(c.Sources.ClaudeCode.Profiles) {
+		c.mu.Unlock()
+		return fmt.Errorf("invalid Claude profile index %d", index)
+	}
+	if len(c.Sources.ClaudeCode.Profiles) == 1 {
+		c.mu.Unlock()
+		return fmt.Errorf("at least one Claude profile is required")
+	}
+	c.Sources.ClaudeCode.Profiles = append(c.Sources.ClaudeCode.Profiles[:index],
+		c.Sources.ClaudeCode.Profiles[index+1:]...)
+	c.mu.Unlock()
+	return c.Save()
+}
+
+// MoveClaudeProfile changes its order everywhere profiles are displayed.
+func (c *Config) MoveClaudeProfile(index, offset int) error {
+	c.mu.Lock()
+	target := index + offset
+	if index < 0 || index >= len(c.Sources.ClaudeCode.Profiles) ||
+		target < 0 || target >= len(c.Sources.ClaudeCode.Profiles) {
+		c.mu.Unlock()
+		return fmt.Errorf("cannot move Claude profile %d by %d", index, offset)
+	}
+	c.Sources.ClaudeCode.Profiles[index], c.Sources.ClaudeCode.Profiles[target] =
+		c.Sources.ClaudeCode.Profiles[target], c.Sources.ClaudeCode.Profiles[index]
+	c.mu.Unlock()
+	return c.Save()
+}
+
+// AddCodexProfile appends a profile ready to be filled in on the page.
+func (c *Config) AddCodexProfile() error {
+	c.mu.Lock()
+	c.Sources.Codex.Profiles = append(c.Sources.Codex.Profiles, Profile{Path: "auto"})
+	c.mu.Unlock()
+	return c.Save()
+}
+
+// RemoveCodexProfile removes one profile while retaining at least one source.
+func (c *Config) RemoveCodexProfile(index int) error {
+	c.mu.Lock()
+	if index < 0 || index >= len(c.Sources.Codex.Profiles) {
+		c.mu.Unlock()
+		return fmt.Errorf("invalid Codex profile index %d", index)
+	}
+	if len(c.Sources.Codex.Profiles) == 1 {
+		c.mu.Unlock()
+		return fmt.Errorf("at least one Codex profile is required")
+	}
+	c.Sources.Codex.Profiles = append(c.Sources.Codex.Profiles[:index],
+		c.Sources.Codex.Profiles[index+1:]...)
+	c.mu.Unlock()
+	return c.Save()
+}
+
+// MoveCodexProfile changes the display order shared by providers, the tray
+// menu, icon cells and charts.
+func (c *Config) MoveCodexProfile(index, offset int) error {
+	c.mu.Lock()
+	target := index + offset
+	if index < 0 || index >= len(c.Sources.Codex.Profiles) ||
+		target < 0 || target >= len(c.Sources.Codex.Profiles) {
+		c.mu.Unlock()
+		return fmt.Errorf("cannot move Codex profile %d by %d", index, offset)
+	}
+	c.Sources.Codex.Profiles[index], c.Sources.Codex.Profiles[target] =
+		c.Sources.Codex.Profiles[target], c.Sources.Codex.Profiles[index]
+	c.mu.Unlock()
+	return c.Save()
+}
+
+func boundedInt(value string, min, max int) (int, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil || n < min || n > max {
+		return 0, fmt.Errorf("value must be between %d and %d", min, max)
+	}
+	return n, nil
+}
+
+func boundedFloat(value string, min, max float64) (float64, error) {
+	n, err := strconv.ParseFloat(value, 64)
+	if err != nil || n < min || n > max {
+		return 0, fmt.Errorf("value must be between %g and %g", min, max)
+	}
+	return n, nil
+}
+
+func positiveIntList(value string, min, max int) ([]int, error) {
+	fields := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '\u3001' || r == ' ' || r == '\t'
+	})
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("at least one value is required")
+	}
+	values := make([]int, 0, len(fields))
+	for _, field := range fields {
+		n, err := boundedInt(field, min, max)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, n)
+	}
+	return normaliseThresholds(values, values), nil
+}
+
+func validHexColor(value string) bool {
+	if len(value) != 7 || value[0] != '#' {
+		return false
+	}
+	_, err := strconv.ParseUint(value[1:], 16, 24)
+	return err == nil
 }
 
 func (c *Config) BankedResetNotifications() BankedResetExpiry {

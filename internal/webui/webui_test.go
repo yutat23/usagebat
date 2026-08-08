@@ -1,8 +1,10 @@
 package webui
 
 import (
+	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -13,14 +15,16 @@ import (
 func testServer(t *testing.T) (*Server, string, *http.Client) {
 	t.Helper()
 	s := &Server{Render: func() Page {
-		return Page{Title: "usagebat", Version: "0.6.0", Sections: []Section{
-			{Title: "Headroom", Grid: true,
-				Rows: []Row{{Label: "Claude Code · 5h", Kind: KindChart}}},
-			{Title: "Icon", Aside: true, Rows: []Row{
-				{ID: "mode:both", Label: "Battery + %", Kind: KindRadio, Checked: true},
-				{ID: "history", Label: "Record history", Kind: KindToggle},
-			}},
-		}}
+		return Page{Title: "usagebat", Version: "0.6.0", OverviewLabel: "Overview",
+			SettingsLabel: "Settings sections", SavedLabel: "Saved", SaveErrorLabel: "Could not save",
+			Sections: []Section{
+				{Title: "Headroom", Grid: true,
+					Rows: []Row{{Label: "Claude Code · 5h", Kind: KindChart}}},
+				{Title: "Icon", Aside: true, CategoryID: "general", CategoryTitle: "General", Rows: []Row{
+					{ID: "mode:both", Label: "Battery + %", Kind: KindRadio, Checked: true},
+					{ID: "history", Label: "Record history", Kind: KindToggle},
+				}},
+			}}
 	}}
 	t.Cleanup(func() { s.Close() })
 	raw, err := s.Open()
@@ -161,14 +165,17 @@ func TestApplyPostsTheRowIdAndRedirects(t *testing.T) {
 	s, raw, client := testServer(t)
 	var mu sync.Mutex
 	var got []string
-	s.Activate = func(id string) {
+	s.Activate = func(id, value string) error {
 		mu.Lock()
 		defer mu.Unlock()
-		got = append(got, id)
+		got = append(got, id+"="+value)
+		return nil
 	}
 	client.Get(raw)
 
-	resp, err := client.PostForm("http://"+s.Addr()+"/apply", url.Values{"id": {"history"}})
+	resp, err := client.PostForm("http://"+s.Addr()+"/apply", url.Values{
+		"id": {"setting:refreshSeconds"}, "value": {"90"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,21 +186,66 @@ func TestApplyPostsTheRowIdAndRedirects(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if len(got) != 1 || got[0] != "history" {
-		t.Fatalf("activated %v, want [history]", got)
+	if len(got) != 1 || got[0] != "setting:refreshSeconds=90" {
+		t.Fatalf("activated %v, want the field id and value", got)
 	}
 }
 
-// One screen, two columns: the charts go in the wide one and the settings
-// beside them, which is what the layout hangs off.
-func TestPageSplitsMainFromAside(t *testing.T) {
+// Charts and settings keep separate containers so CSS can give charts the
+// full width and lay settings out as responsive cards below.
+func TestPageSplitsChartsFromSettings(t *testing.T) {
 	s, raw, client := testServer(t)
 	client.Get(raw)
 	page := get(t, client, "http://"+s.Addr()+"/")
 
-	for _, want := range []string{`class="col main"`, `class="col side"`, `class="rows grid"`} {
+	for _, want := range []string{
+		`class="col main"`, `class="tabbar"`, `class="settings-grid"`, `class="rows grid"`,
+		`data-tab-panel="overview"`, `max-width: 72rem`,
+		`columns: 18rem`, `break-inside: avoid`,
+	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page is missing %s", want)
+		}
+	}
+}
+
+func TestSettingsGroupsPreserveCategoryAndSectionOrder(t *testing.T) {
+	page := Page{Sections: []Section{
+		{Title: "Chart"},
+		{Title: "Icon", Aside: true, CategoryID: "general", CategoryTitle: "General"},
+		{Title: "Language", Aside: true, CategoryID: "general", CategoryTitle: "General"},
+		{Title: "Colors", Aside: true, CategoryID: "appearance", CategoryTitle: "Appearance"},
+	}}
+	groups := page.SettingsGroups()
+	if len(groups) != 2 || groups[0].ID != "general" || groups[1].ID != "appearance" {
+		t.Fatalf("groups = %+v", groups)
+	}
+	if len(groups[0].Sections) != 2 || groups[0].Sections[0].Title != "Icon" ||
+		groups[0].Sections[1].Title != "Language" {
+		t.Fatalf("general sections = %+v", groups[0].Sections)
+	}
+}
+
+func TestPageRendersEditableInputsAndSelects(t *testing.T) {
+	s := &Server{Render: func() Page {
+		return Page{Title: "usagebat", Sections: []Section{{Aside: true, Rows: []Row{
+			{ID: "setting:refreshSeconds", Label: "Refresh interval", Kind: KindInput,
+				InputType: "number", Value: "90", Min: "5", Max: "3600", SubmitLabel: "Save"},
+			{ID: "setting:icon.windowsLayout", Label: "Windows layout", Kind: KindSelect,
+				Value: "single", SubmitLabel: "Save", Options: []Option{
+					{Value: "stack", Label: "Stack"}, {Value: "single", Label: "Single"},
+				}},
+		}}}}
+	}}
+	recorder := httptest.NewRecorder()
+	s.renderPage(recorder)
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`name="value" type="number" value="90"`, `min="5"`, `max="3600"`,
+		`<option value="single" selected>Single</option>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("editable settings page is missing %q:\n%s", want, body)
 		}
 	}
 }
@@ -201,7 +253,7 @@ func TestPageSplitsMainFromAside(t *testing.T) {
 // Whatever a form claims, the change lands back on the one screen there is.
 func TestApplyAlwaysReturnsToTheScreen(t *testing.T) {
 	s, raw, client := testServer(t)
-	s.Activate = func(string) {}
+	s.Activate = func(string, string) error { return nil }
 	client.Get(raw)
 
 	for _, from := range []string{"", "/settings", "https://example.com/"} {
@@ -227,6 +279,27 @@ func TestApplyRejectsGet(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405: a link must not be able to change a setting", resp.StatusCode)
+	}
+}
+
+func TestApplyReportsValidationErrors(t *testing.T) {
+	s, raw, client := testServer(t)
+	s.Activate = func(string, string) error { return errors.New("invalid setting value") }
+	client.Get(raw)
+
+	resp, err := client.PostForm("http://"+s.Addr()+"/apply", url.Values{
+		"id": {"setting:refreshSeconds"}, "value": {"0"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "invalid setting value") {
+		t.Fatalf("validation error was not returned: %s", body)
 	}
 }
 
@@ -262,7 +335,7 @@ func TestPageAllowsOnlyItsOwnScript(t *testing.T) {
 // The script is only useful if the forms it enhances still work without it.
 func TestFormsWorkWithoutTheScript(t *testing.T) {
 	s, raw, client := testServer(t)
-	s.Activate = func(string) {}
+	s.Activate = func(string, string) error { return nil }
 	client.Get(raw)
 
 	page := get(t, client, "http://"+s.Addr()+"/")
@@ -284,7 +357,7 @@ func TestFormsWorkWithoutTheScript(t *testing.T) {
 // fetch twice.
 func TestFetchCallersGetNoContent(t *testing.T) {
 	s, raw, client := testServer(t)
-	s.Activate = func(string) {}
+	s.Activate = func(string, string) error { return nil }
 	client.Get(raw)
 
 	req, err := http.NewRequest(http.MethodPost, "http://"+s.Addr()+"/apply",
@@ -319,8 +392,10 @@ func TestScriptNeedsTheSession(t *testing.T) {
 
 	client.Get(raw)
 	body := get(t, client, "http://"+s.Addr()+"/app.js")
-	if !strings.Contains(body, "data-async") {
-		t.Errorf("served script does not look like the enhancement:\n%s", body)
+	for _, want := range []string{"data-async", "data-tab-target", "reportValidity", "window.location.hash"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("served script is missing %q:\n%s", want, body)
+		}
 	}
 }
 

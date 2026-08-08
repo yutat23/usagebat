@@ -158,6 +158,26 @@ func TestEachHomeStaysItsOwnSource(t *testing.T) {
 	}
 }
 
+func TestTildeProfilesResolveAsSeparateAccounts(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	reset := time.Now().Add(time.Hour).Unix()
+	for _, name := range []string{".codex-w", ".codex-p"} {
+		writeRollout(t, filepath.Join(home, name), "2026-08-06", "rollout.jsonl",
+			tokenCount("2026-08-06T05:00:00.000Z", jsonBucket(25, 300, reset), ""))
+	}
+	providers := Providers(&config.Codex{Profiles: []config.Profile{
+		{Path: "~/.codex-w", Label: "codex-w", Short: "CW"},
+		{Path: "~/.codex-p", Label: "codex-p", Short: "CP"},
+	}})
+	if len(providers) != 2 {
+		t.Fatalf("got %d providers, want both tilde profiles", len(providers))
+	}
+	if providers[0].Short() != "CW" || providers[1].Short() != "CP" {
+		t.Fatalf("short names = %q, %q", providers[0].Short(), providers[1].Short())
+	}
+}
+
 func contains(xs []float64, want float64) bool {
 	for _, x := range xs {
 		if x == want {

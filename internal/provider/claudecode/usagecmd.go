@@ -41,9 +41,12 @@ var resetPattern = regexp.MustCompile(
 	`^([A-Za-z]{3,})\s+(\d{1,2})\s+at\s+(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])?\s*(?:\(([^)]+)\))?$`)
 
 // runUsage executes the slash command and returns its rendered text.
-func runUsage(ctx context.Context, bin string) (string, error) {
+func runUsage(ctx context.Context, bin, configDir string) (string, error) {
 	cmd := exec.CommandContext(ctx, bin, "-p", "/usage", "--output-format", "json")
 	hiddenprocess.Configure(cmd)
+	if configDir != "" {
+		cmd.Env = withClaudeConfigDir(os.Environ(), configDir)
+	}
 	// Run somewhere neutral: the command inherits the working directory as its
 	// project context, and the app's own directory is not meaningful here.
 	cmd.Dir = os.TempDir()
@@ -56,6 +59,10 @@ func runUsage(ctx context.Context, bin string) (string, error) {
 		return "", err
 	}
 
+	return decodeUsageJSON(out)
+}
+
+func decodeUsageJSON(out []byte) (string, error) {
 	var payload struct {
 		IsError bool   `json:"is_error"`
 		Result  string `json:"result"`
@@ -68,6 +75,17 @@ func runUsage(ctx context.Context, bin string) (string, error) {
 		return "", fmt.Errorf("/usage reported an error: %s", payload.Subtype)
 	}
 	return payload.Result, nil
+}
+
+func withClaudeConfigDir(env []string, dir string) []string {
+	const prefix = "CLAUDE_CONFIG_DIR="
+	out := make([]string, 0, len(env)+1)
+	for _, item := range env {
+		if !strings.HasPrefix(item, prefix) {
+			out = append(out, item)
+		}
+	}
+	return append(out, prefix+dir)
 }
 
 // parseUsage turns the rendered text into window statuses. Unrecognised lines

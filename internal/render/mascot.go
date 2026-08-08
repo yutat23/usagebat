@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// The mascot is the app icon, drawn large and wearing the expression the
-// current headroom deserves. It is deliberately the one pixel-art thing left
+// The mascot is the app icon, drawn large with a stable expression. It is
+// deliberately the one pixel-art thing left
 // on the settings page: the charts are data and read better smooth, but the
 // bat is the icon, and the icon is pixel art everywhere else it appears.
 //
@@ -14,8 +14,8 @@ import (
 // say anything the battery beside it does not say better.
 
 // Mascot renders the bat as inline SVG.
-func Mascot(face Face, label string) Chart {
-	sprite := Sprite(face)
+func Mascot(label string) Chart {
+	sprite := Sprite()
 	var b strings.Builder
 	fmt.Fprintf(&b, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 %d %d" `+
 		`shape-rendering="crispEdges" role="img" aria-label="%s">`,

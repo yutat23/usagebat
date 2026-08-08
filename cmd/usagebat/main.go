@@ -236,7 +236,9 @@ func (a *app) notifyOnce() error {
 func (a *app) rebuild() {
 	a.providers = nil
 	if a.cfg.Sources.ClaudeCode.Enabled && claudecode.Available(&a.cfg.Sources.ClaudeCode) {
-		a.providers = append(a.providers, claudecode.New(&a.cfg.Sources.ClaudeCode))
+		for _, p := range claudecode.Providers(&a.cfg.Sources.ClaudeCode) {
+			a.providers = append(a.providers, p)
+		}
 	}
 	if a.cfg.Sources.Codex.Enabled && codex.Available(&a.cfg.Sources.Codex) {
 		// One provider per Codex home: separate homes are separate accounts.
@@ -525,38 +527,65 @@ func displayCells(cfg *config.Config, snap *model.Snapshot) []render.Cell {
 		if !snapshotHasFamily(snap, selected) {
 			continue
 		}
-		// A selection can name a whole service or one account of it. Naming an
-		// account draws it on its own instead of folding it into the family's
-		// most constrained figure.
-		family, profile := selected, ""
-		if source, ok := findSource(snap, selected); ok {
-			family = sourceFamily(selected)
-			profile = profileAbbreviation(source)
-		}
-		aggregated := &model.Snapshot{Sources: snap.Sources}
-		aggregated.AggregateSources(model.AllWindows, []string{selected})
-		auto, windows := cfg.LimitSelection(family)
-		if auto {
-			windows = nil
-			for _, w := range model.AllWindows {
-				if st := aggregated.Icon[w]; st.Known {
-					windows = []model.Window{w}
-					break
+		for _, target := range displayTargets(snap, selected) {
+			// A target can name a whole service or one account of it. Naming an
+			// account draws it on its own with the configured abbreviation.
+			family, profile := target, ""
+			if source, ok := findSource(snap, target); ok {
+				family = sourceFamily(target)
+				profile = profileAbbreviation(source)
+			}
+			aggregated := &model.Snapshot{Sources: snap.Sources}
+			aggregated.AggregateSources(model.AllWindows, []string{target})
+			auto, windows := cfg.LimitSelection(family)
+			if auto {
+				windows = nil
+				for _, w := range model.AllWindows {
+					if st := aggregated.Icon[w]; st.Known {
+						windows = []model.Window{w}
+						break
+					}
 				}
 			}
-		}
-		if len(windows) == 0 {
-			windows = []model.Window{model.Window5h}
-		}
-		for _, w := range windows {
-			st := aggregated.Icon[w]
-			st.Window = w
-			cells = append(cells, render.Cell{
-				Service: family, Period: w.Label(), Profile: profile, Status: st,
-			})
+			if len(windows) == 0 {
+				windows = []model.Window{model.Window5h}
+			}
+			for _, w := range windows {
+				st := aggregated.Icon[w]
+				st.Window = w
+				cells = append(cells, render.Cell{
+					Service: family, Period: w.Label(), Profile: profile, Status: st,
+				})
+			}
 		}
 	}
 	return cells
+}
+
+// displayTargets expands a family selection when its accounts need to remain
+// distinguishable. A single unnamed default profile keeps the compact CX
+// label; configured abbreviations and multiple accounts are shown separately.
+func displayTargets(snap *model.Snapshot, selected string) []string {
+	if _, exact := findSource(snap, selected); exact {
+		return []string{selected}
+	}
+	var matches []model.SourceStatus
+	for _, source := range snap.Sources {
+		if sourceFamily(source.ID) == selected {
+			matches = append(matches, source)
+		}
+	}
+	if len(matches) == 1 && matches[0].Short == "" {
+		return []string{selected}
+	}
+	if len(matches) == 0 {
+		return []string{selected}
+	}
+	targets := make([]string, 0, len(matches))
+	for _, source := range matches {
+		targets = append(targets, source.ID)
+	}
+	return targets
 }
 
 // squareCellLimit is how many bars fit in a Windows tray icon and still read

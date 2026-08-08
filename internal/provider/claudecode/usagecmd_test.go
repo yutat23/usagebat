@@ -12,6 +12,14 @@ import (
 	"github.com/yutat23/usagebat/internal/model"
 )
 
+func TestClaudeConfigDirReplacesInheritedValue(t *testing.T) {
+	got := withClaudeConfigDir([]string{"PATH=/bin", "CLAUDE_CONFIG_DIR=/old", "LANG=C"}, "/new")
+	joined := strings.Join(got, "\n")
+	if strings.Contains(joined, "CLAUDE_CONFIG_DIR=/old") || !strings.Contains(joined, "CLAUDE_CONFIG_DIR=/new") {
+		t.Fatalf("environment = %v", got)
+	}
+}
+
 // sampleOutput reproduces the layout of `claude -p /usage --output-format json`
 // on a subscription account. The wording and punctuation are what the parser
 // keys off, so they are kept verbatim; the figures are made up.
@@ -28,6 +36,21 @@ Last 24h · 120 requests · 2 sessions
 
 Last 7d · 480 requests · 9 sessions
   39% of your usage was at >150k context`
+
+func TestDecodeAndParseRealUsageJSONWithZeroPercent(t *testing.T) {
+	raw := []byte(`{"is_error":false,"num_turns":0,"result":"You are currently using your subscription to power your Claude Code usage\n\nCurrent session: 0% used · resets Aug 9 at 3am (Asia/Tokyo)\nCurrent week (all models): 5% used · resets Aug 13 at 9am (Asia/Tokyo)"}`)
+	text, err := decodeUsageJSON(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := parseUsage(text, time.Date(2026, 8, 9, 0, 0, 0, 0, time.Local))
+	if session := got[model.Window5h]; !session.Known || session.UsedPercent != 0 {
+		t.Fatalf("session = %+v, want known 0%% used", session)
+	}
+	if week := got[model.WindowWeekly]; !week.Known || week.UsedPercent != 5 {
+		t.Fatalf("week = %+v, want known 5%% used", week)
+	}
+}
 
 func TestParseUsageOutput(t *testing.T) {
 	now := time.Date(2026, 8, 2, 15, 0, 0, 0, time.Local)
@@ -231,6 +254,71 @@ func TestRequestedRefreshFallsBackToTheCache(t *testing.T) {
 	st := p.Collect(now)
 	if got := st.Windows[model.Window5h].UsedPercent; got != 20 {
 		t.Errorf("5h = %v%%, want the cache used when /usage cannot run", got)
+	}
+}
+
+func TestStaleActiveCacheFallsBackWhenUsageFails(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	fetched := now.Add(-17 * time.Minute)
+	writeUsageCache(t, filepath.Join(dir, ".claude.json"), 20, fetched)
+
+	c := config.Default().Sources.ClaudeCode
+	c.ProjectsDir = dir
+	c.UsageCacheFile = filepath.Join(dir, ".claude.json")
+	c.UsageCommand.Path = filepath.Join(dir, "no-such-claude")
+	p := New(&c)
+
+	st := p.Collect(now)
+	if got := st.Windows[model.Window5h]; !got.Known || got.UsedPercent != 20 {
+		t.Fatalf("5h = %+v, want stale but active cache value", got)
+	}
+	if !strings.Contains(st.Note, "17m0s old") || !strings.Contains(st.Note, "/usage") {
+		t.Fatalf("note = %q, want cache age and /usage failure", st.Note)
+	}
+}
+
+func TestStaleCachePastItsResetIsNotUsed(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	writeUsageCache(t, filepath.Join(dir, ".claude.json"), 20, now.Add(-2*time.Hour))
+
+	c := config.Default().Sources.ClaudeCode
+	c.ProjectsDir = dir
+	c.UsageCacheFile = filepath.Join(dir, ".claude.json")
+	c.UsageCommand.Path = filepath.Join(dir, "no-such-claude")
+	st := New(&c).Collect(now)
+	if got, ok := st.Windows[model.Window5h]; ok {
+		t.Fatalf("5h = %+v, want expired cache omitted", got)
+	}
+}
+
+func TestPassedResetRefreshesEvenAYoungCache(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now()
+	body := fmt.Sprintf(`{"cachedUsageUtilization":{"fetchedAtMs":%d,"utilization":{`+
+		`"five_hour":{"utilization":20,"resets_at":%q},`+
+		`"seven_day":{"utilization":5,"resets_at":%q}}}}`,
+		now.Add(-2*time.Minute).UnixMilli(), now.Add(-time.Minute).Format(time.RFC3339),
+		now.Add(24*time.Hour).Format(time.RFC3339))
+	cachePath := filepath.Join(dir, ".claude.json")
+	if err := os.WriteFile(cachePath, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	c := config.Default().Sources.ClaudeCode
+	c.ProjectsDir = dir
+	c.UsageCacheFile = cachePath
+	p := New(&c)
+	p.lastAttempt = now // Keep the test from starting a real subprocess.
+	p.reportedAt = now
+	p.reported = map[model.Window]model.WindowStatus{
+		model.Window5h: {Window: model.Window5h, Known: true, UsedPercent: 1},
+	}
+
+	st := p.Collect(now)
+	if got := st.Windows[model.Window5h]; !got.Known || got.UsedPercent != 1 {
+		t.Fatalf("5h = %+v, want /usage reading after cached reset", got)
 	}
 }
 

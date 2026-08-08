@@ -19,7 +19,7 @@ func main() {
 	root := flag.String("root", ".", "repository root")
 	flag.Parse()
 
-	pixels := render.Sprite(render.FaceContent)
+	pixels := render.Sprite()
 	must(writeSVG(filepath.Join(*root, "assets", "usagebat.svg"), pixels))
 	must(writePNG(filepath.Join(*root, "assets", "usagebat.png"), pixels, 1024))
 	must(writePreview(filepath.Join(*root, "build", "usagebat-icon-preview.png"), pixels, 1024))

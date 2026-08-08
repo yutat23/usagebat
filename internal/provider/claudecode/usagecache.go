@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -32,36 +31,52 @@ type cachedBucket struct {
 	ResetsAt    string   `json:"resets_at"`
 }
 
-func (p *Provider) collectCached(now time.Time) (map[model.Window]model.WindowStatus, error) {
-	path := p.cfg.UsageCacheFile
-	if path == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, err
-		}
-		path = filepath.Join(home, ".claude.json")
-	} else {
-		path = expandHome(path)
-	}
+func (p *Provider) collectCached(now time.Time) (map[model.Window]model.WindowStatus, time.Duration, bool, error) {
+	path := p.usageCacheFile
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, err
+		return nil, 0, false, err
 	}
 	var root struct {
 		Cache *cachedUsage `json:"cachedUsageUtilization"`
 	}
 	if err := json.Unmarshal(data, &root); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", path, err)
+		return nil, 0, false, fmt.Errorf("parsing %s: %w", path, err)
 	}
 	if root.Cache == nil || root.Cache.FetchedAtMs <= 0 {
-		return nil, fmt.Errorf("no cached usage in %s", path)
+		return nil, 0, false, fmt.Errorf("no cached usage in %s", path)
 	}
 	fetched := time.UnixMilli(root.Cache.FetchedAtMs)
-	maxAge := time.Duration(p.cfg.UsageCommand.StaleAfterSeconds) * time.Second
-	if maxAge > 0 && now.Sub(fetched) > maxAge {
-		return nil, fmt.Errorf("cached usage is %s old", now.Sub(fetched).Round(time.Minute))
+	age := now.Sub(fetched)
+	if age < 0 {
+		age = 0
 	}
-	return parseCachedUsage(root.Cache, now), nil
+	parsed := parseCachedUsage(root.Cache, now)
+	resetPassed := cachedResetPassed(root.Cache, now)
+	if len(parsed) == 0 {
+		return nil, age, resetPassed, fmt.Errorf("cached usage has no active limits")
+	}
+	return parsed, age, resetPassed, nil
+}
+
+func cachedResetPassed(cache *cachedUsage, now time.Time) bool {
+	passed := func(percent *float64, reset string) bool {
+		if percent == nil || reset == "" {
+			return false
+		}
+		at, err := time.Parse(time.RFC3339Nano, reset)
+		return err == nil && !at.After(now)
+	}
+	if passed(cache.Utilization.FiveHour.Utilization, cache.Utilization.FiveHour.ResetsAt) ||
+		passed(cache.Utilization.SevenDay.Utilization, cache.Utilization.SevenDay.ResetsAt) {
+		return true
+	}
+	for _, limit := range cache.Utilization.Limits {
+		if passed(limit.Percent, limit.ResetsAt) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseCachedUsage(cache *cachedUsage, now time.Time) map[model.Window]model.WindowStatus {
