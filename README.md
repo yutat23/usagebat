@@ -31,7 +31,7 @@ Windows tray icons have a fixed square shape. With the default `stack` layout, o
 - Changes from green to yellow below 50%, then red below 20%
 - Adapts label and battery colors to light and dark system bars
 - Can launch automatically when you sign in
-- Supports multiple Codex profiles without mixing their limits
+- Supports multiple Claude Code and Codex profiles without mixing their limits
 - Shows available Codex banked resets and their earliest known expiry
 - Notifies once at 7 days and 24 hours before a banked reset expires
 - Follows the OS language or can be fixed to English or Japanese
@@ -42,9 +42,9 @@ Download the appropriate file from the latest GitHub release:
 
 | Platform | Release file |
 |---|---|
-| macOS, Apple Silicon or Intel | `usagebat_0.5.1_macOS_universal.zip` |
-| Windows on an Intel or AMD processor | `usagebat_0.5.1_windows_amd64.zip` |
-| Windows on ARM | `usagebat_0.5.1_windows_arm64.zip` |
+| macOS, Apple Silicon or Intel | `usagebat_0.6.0_macOS_universal.zip` |
+| Windows on an Intel or AMD processor | `usagebat_0.6.0_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.6.0_windows_arm64.zip` |
 
 Most Windows computers need the `amd64` build. Use `arm64` only for a Windows on ARM device.
 
@@ -59,7 +59,7 @@ At least one supported CLI must be installed and signed in:
 2. Move `usagebat.app` to `/Applications`.
 3. Open it. usagebat has no Dock icon; look for its battery in the menu bar.
 
-The v0.5.1 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
+The v0.6.0 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
 
 ### Windows
 
@@ -67,7 +67,7 @@ The v0.5.1 build is not notarized. If macOS blocks the first launch, Control-cli
 2. Run `usagebat.exe`.
 3. Look for its battery in the system tray. It may initially be inside the hidden-icons menu.
 
-The v0.5.1 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
+The v0.6.0 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
 
 ## Using the tray menu
 
@@ -88,11 +88,17 @@ By default, usagebat selects the shortest limit each service actually reports. L
 
 The icon follows the system bar appearance. `CL` uses a Claude terracotta, `CX` uses a Codex teal, and all period suffixes (`5H`, `WK`, and `MO`) share a neutral high-contrast color. Battery status colors also switch between light and dark variants so warning yellow and other details remain legible.
 
-If a service has multiple configured accounts, naming the service in `displaySources` shows the account with the least remaining capacity — one battery for "how is Codex doing". Naming the accounts instead draws each one:
+If Claude Code or Codex has multiple configured accounts, each account gets its own cell. A configured `short` replaces the generic `CL`/`CX` label, so work and personal profiles can appear as `CW` and `CP`. A single unnamed default profile keeps the compact service label:
 
 ```json
 "displaySources": ["claude-code", "codex:codex-work-1a2b", "codex:codex-home-3c4d"],
 "sources": {
+  "claudeCode": {
+    "profiles": [
+      { "path": "~/.claude-work", "label": "Claude Work", "short": "CW" },
+      { "path": "~/.claude-home", "label": "Claude Home", "short": "CH" }
+    ]
+  },
   "codex": {
     "profiles": [
       { "path": "~/.codex-work", "label": "Work", "short": "W" },
@@ -103,6 +109,7 @@ If a service has multiple configured accounts, naming the service in `displaySou
 ```
 
 `short` is what the icon has room for; it replaces the `CL`/`CX` prefix, and the colour still says which service it is. The menu and the charts use `label`.
+Profile order is shared by the icon, tray menu, and charts, and can be changed from the Accounts settings tab.
 
 The macOS menu bar grows a cell per account. A Windows tray icon is sixteen dots square, so it draws at most three bars and keeps the most constrained ones; set `icon.windowsLayout` to `single` if you would rather always see just one.
 
@@ -118,7 +125,9 @@ When the Codex app server provides earned rate-limit resets, usagebat shows the 
 
 ### Claude Code
 
-Current Claude Code versions cache service-reported utilization in `~/.claude.json`. usagebat reads the 5-hour and weekly figures, reset times, and any additional limits actually present in that cache. A cached value older than 15 minutes is not treated as current by default.
+Current Claude Code versions cache service-reported utilization in `~/.claude.json`. usagebat reads the 5-hour and weekly figures, reset times, and any additional limits actually present in that cache. Additional profiles use their own `CLAUDE_CONFIG_DIR`, cache, and `projects` directory.
+
+The cache is used directly while fresh. After 15 minutes, or when a cached reset time has passed, usagebat asks `claude -p "/usage" --output-format json` for a current reading. If that command is temporarily unavailable, a cached bucket whose reset time is still in the future remains visible with its age; a bucket is never carried past its reset time.
 
 It can also ask `claude -p "/usage" --output-format json` directly, which is what **Refresh now** does: the cache is only as fresh as the last time Claude Code itself talked to the service, and a refresh you asked for is worth a live reading.
 
@@ -126,12 +135,17 @@ Every percentage comes from the service. A window it does not report is shown as
 
 ## Configuration
 
-The configuration file is created on first launch:
+Choose **Settings…** from the tray menu to edit the usual display, refresh,
+notification, history, update, color, and Claude Code/Codex account settings. Changes are
+validated, saved, and applied without restarting the app.
+
+The underlying configuration file is created on first launch:
 
 - macOS: `~/Library/Application Support/usagebat/config.json`
 - Windows: `%AppData%\usagebat\config.json`
 
-Choose **Open config file…** from the tray menu. Saved changes are reloaded without restarting the app.
+**Open config file…** remains available for advanced provider and CLI tuning.
+Saved manual changes are also reloaded without restarting the app.
 
 Common settings include:
 
@@ -148,7 +162,10 @@ Common settings include:
 | `colors.light` / `colors.dark` | Theme-specific battery, service-label, and period-label colors |
 | `colors.warnBelow` / `colors.criticalBelow` | Remaining-percentage warning thresholds |
 | `notifications.bankedResetExpiry` | Enable expiry alerts and set threshold hours |
+| `history` | Local chart sampling interval and retention |
+| `updateCheck` | Optional GitHub release checks and interval |
 | `sources.claudeCode.usageCommand.path` | Explicit Claude executable path, if auto-detection fails |
+| `sources.claudeCode.profiles` | Claude Code accounts to track, with their `CLAUDE_CONFIG_DIR` and display names |
 | `sources.codex.path` | Explicit Codex executable path, if auto-detection fails |
 | `sources.codex.profiles` | Codex accounts to track, with the names they are shown under |
 | `notifications.limitThresholds` | Warn when headroom drops past a percentage |
@@ -189,16 +206,19 @@ Each reset and threshold is notified only once. Deduplication state is stored se
 
 The Windows toast schema can only point at an icon file on disk, so usagebat writes `usagebat-toast-icon.png` next to `usagebat.exe`; deleting the program directory removes it too. If that directory is read-only, the icon goes to `%AppData%\usagebat\` instead.
 
-### Multiple Codex profiles
+### Multiple profiles
 
-`"auto"` uses `$CODEX_HOME`, or `~/.codex` when the environment variable is unset. Additional profiles must be named explicitly:
+For Claude Code, `"auto"` uses `$CLAUDE_CONFIG_DIR`, or `~/.claude` when unset. For Codex it uses `$CODEX_HOME`, or `~/.codex`. Additional profiles can be configured in the Accounts settings tab or in JSON:
 
 ```json
 "codex": {
   "enabled": true,
   "path": "",
   "timeoutSeconds": 15,
-  "homes": ["~/.codex-work", "~/.codex-personal"]
+  "profiles": [
+    { "path": "~/.codex-work", "label": "Work", "short": "W" },
+    { "path": "~/.codex-personal", "label": "Personal", "short": "P" }
+  ]
 }
 ```
 
@@ -247,7 +267,7 @@ Go 1.25 or newer is required.
 You can install the command directly from the tagged source:
 
 ```sh
-go install github.com/yutat23/usagebat/cmd/usagebat@v0.5.1
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.6.0
 ```
 
 The binary is normally written to `~/go/bin` on macOS or `%USERPROFILE%\go\bin` on Windows. This route is intended for developers:

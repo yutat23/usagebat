@@ -4,7 +4,7 @@ set -eu
 version=${1:-}
 case "$version" in
   ''|*[!0-9.]*|.*|*.)
-    echo "usage: $0 VERSION (for example: 0.3.0)" >&2
+    echo "usage: $0 VERSION (for example: 0.6.0)" >&2
     exit 2
     ;;
 esac

@@ -63,15 +63,15 @@ macOS のメニューバー / Windows のタスクトレイに **ドット絵の
 
 したがって次の方針を取る：
 
-- 既定 `homes: ["auto"]` の `auto` は **`$CODEX_HOME`、無ければ `~/.codex` だけ**を指す。
+- 既定 `profiles: [{"path":"auto"}]` の `auto` は **`$CODEX_HOME`、無ければ `~/.codex` だけ**を指す。
   ディレクトリを探し回らない。ユーザーが名指ししていないホームを勝手に採用すると、
   **他人（別アカウント）の残量をメニューバーに出す**ことになりかねないため
-- 複数使いたい場合は明示的に列挙する: `"homes": ["~/.codex-work", "~/.codex-personal"]`
+- 複数使いたい場合は明示的に列挙する: `"profiles": [{"path":"~/.codex-work"}, {"path":"~/.codex-personal"}]`
 - **列挙されたホームはそれぞれ独立したソースとして扱う。** 1つに畳んで「最も新しい記録を採用」
   としてしまうと、直近に使った方のアカウントの数字が他方の名前で出てしまう
 - ホーム名は `~/.codex` なら `Codex`、それ以外は `Codex (~/.codex-work)` のようにパス付きで表示する
 - `auto` で何も見つからず、かつ `~/.codex-*` が実在する場合は、
-  「`~/.codex-work` を `sources.codex.homes` に追加してください」とメニューに出す。
+  「`~/.codex-work` を `sources.codex.profiles` に追加してください」とメニューに出す。
   黙って拾うのではなく、ユーザーに決めさせる
 
 ### 3.2 Claude Code — ローカル利用量キャッシュから実測値を取る
@@ -243,6 +243,8 @@ ICO は 16/20/24/32 px のマルチサイズで出力し、DPI スケーリン�
 ### 4.5 配色
 
 メニューバー／タスクバーのライト・ダークをOSから判定し、テーマ別の配色を使う。
+キャラクターの表情は使用量・残量によって変化させない。ツールを多く使ったことを
+否定的に評価する印象を避け、残量の状態表現はバッテリー、数値、配色、グラフだけが担う。
 サービス略号と期間は役割を分け、`CL`/`CX` はサービス色、`5H`/`WK`/`MO`
 はすべて同じ高コントラストな期間色で描く。
 
@@ -356,7 +358,7 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 
 ```jsonc
 {
-  "version": 6,
+  "version": 8,
   "language": "auto",              // auto | en | ja
   "displayMode": "both",           // both | battery | percent
   "displaySources": ["claude-code", "codex"],
@@ -387,14 +389,22 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
     "bankedResetExpiry": {
       "enabled": true,
       "thresholdHours": [168, 24]
+    },
+    "limitThresholds": {
+      "enabled": true,
+      "percents": [50, 20]
     }
   },
+  "updateCheck": { "enabled": false, "intervalHours": 24 },
+  "history": { "enabled": true, "intervalMinutes": 5, "retentionDays": 30 },
   "sources": {
     "claudeCode": {
       "enabled": true,
-      "projectsDir": "",           // 空 = ~/.claude/projects
+      "profiles": [{ "path": "auto", "label": "", "short": "" }],
+      "usageCacheFile": "",        // 第1プロファイル用の旧形式上書き
+      "projectsDir": "",           // 第1プロファイル用の旧形式上書き
       "weeklyMode": "rolling",     // rolling | calendar
-      // 旧CLI互換フォールバック。トークン消費ゼロ。
+      // キャッシュ期限切れ・手動更新時のライブ取得。トークン消費ゼロ。
       "usageCommand": { "enabled": true, "path": "", "timeoutSeconds": 20,
                         "minIntervalSeconds": 30, "staleAfterSeconds": 900 },
       "weights": { "output": 5, "cacheCreation": 1.25, "cacheRead": 0.1,
@@ -402,9 +412,9 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
     },
     "codex": {
       "enabled": true,
-	  "path": "",                 // 空 = Codex CLIを自動検出
-	  "timeoutSeconds": 15,
-      "homes": ["auto"]            // auto = $CODEX_HOME、無ければ ~/.codex のみ
+      "path": "",                 // 空 = Codex CLIを自動検出
+      "timeoutSeconds": 15,
+      "profiles": [{ "path": "auto", "label": "", "short": "" }]
     }
   }
 }
@@ -414,7 +424,8 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 
 既定の `autoShortest` では、サービスごとに実在する最短枠を1つ選び、別セルで表示する。
 たとえばClaudeの5h枠は `CL5H`、Codex Teamの月次枠は `CXMO` となる。
-同一サービスに複数アカウントがある場合だけ、同じ期間の最小残量を集約する。
+Codexに複数アカウントがある場合は、アカウントごとに別セルで表示する。
+設定された `short` を `CX` の代わりに描き、アカウントを見分けられるようにする。
 サービスは Claude Code のみ / Codex のみ / 両方から選べる。
 固定期間も `displayLimits` によりサービスごとに独立し、Claudeを5h、Codexをmonthlyのように
 別々に指定できる。

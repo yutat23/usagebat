@@ -30,7 +30,7 @@ Windowsのトレイアイコンは正方形に固定されています。既定�
 - Codexのbanked reset所持数と最短期限を表示
 - banked resetの期限7日前と24時間前に一度ずつ通知
 - OS言語への自動追従、英語固定、日本語固定に対応
-- ログイン時の自動起動と複数Codexプロファイルに対応
+- ログイン時の自動起動とClaude Code／Codexの複数プロファイルに対応
 
 ## ダウンロード
 
@@ -38,9 +38,9 @@ Windowsのトレイアイコンは正方形に固定されています。既定�
 
 | 環境 | ファイル |
 |---|---|
-| macOS（Apple Silicon / Intel） | `usagebat_0.5.1_macOS_universal.zip` |
-| Windows Intel / AMD | `usagebat_0.5.1_windows_amd64.zip` |
-| Windows on ARM | `usagebat_0.5.1_windows_arm64.zip` |
+| macOS（Apple Silicon / Intel） | `usagebat_0.6.0_macOS_universal.zip` |
+| Windows Intel / AMD | `usagebat_0.6.0_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.6.0_windows_arm64.zip` |
 
 Claude CodeまたはCodexの少なくとも一方がインストールされ、ログイン済みである必要があります。
 
@@ -74,11 +74,17 @@ macOSではメニューバー項目をクリック、Windowsではトレイア�
 
 既定では、各サービスが実際に報告する最短の制限を選択します。`CL5H`はClaude Codeの5時間枠、`CXWK`はCodexの週間枠、`CXMO`はCodexの月間枠です。
 
-複数アカウントを使っている場合、`displaySources`にサービス名を書くと最も逼迫したアカウント1つに集約されます。アカウントIDを個別に書くと、それぞれを別々に表示します。
+Claude CodeまたはCodexに複数アカウントを設定すると、アカウントごとに別セルで表示します。`short`を設定すると、汎用の`CL`／`CX`の代わりに`CW`・`CP`のような略称を描きます。名前を付けていない標準アカウントが1つだけの場合は、従来どおりのサービス略称で表示します。
 
 ```json
 "displaySources": ["claude-code", "codex:codex-work-1a2b"],
 "sources": {
+  "claudeCode": {
+    "profiles": [
+      { "path": "~/.claude-work", "label": "Claude Work", "short": "CW" },
+      { "path": "~/.claude-home", "label": "Claude Home", "short": "CH" }
+    ]
+  },
   "codex": {
     "profiles": [
       { "path": "~/.codex-work", "label": "Work", "short": "W" },
@@ -89,6 +95,7 @@ macOSではメニューバー項目をクリック、Windowsではトレイア�
 ```
 
 `short`はアイコンに描く1〜2文字で、`CL`/`CX`の代わりに表示されます（サービスの区別は色が担います）。メニューとグラフには`label`を使います。
+プロファイルの並び順はアイコン・トレイメニュー・グラフで共通です。設定画面の「アカウント」から変更できます。
 
 macOSのメニューバーはアカウントの数だけ横に伸びます。Windowsのトレイアイコンは16ドット四方しかないため、**最大3本まで**とし、超える場合は残量の少ないものを優先します。常に1つだけ見たい場合は`icon.windowsLayout`を`single`にしてください。
 
@@ -102,7 +109,9 @@ Codex CLIのapp-serverへ`account/rateLimits/read`を要求し、Codex `/status`
 
 ### Claude Code
 
-現在のClaude Codeが`~/.claude.json`へ保存する利用率キャッシュから、5時間・週間枠とリセット時刻を取得します。`claude -p "/usage" --output-format json`を直接叩くこともでき、メニューの「今すぐ更新」はこちらを使います。キャッシュはClaude Code自身が最後にサービスと通信したときの値なので、明示的な更新では実測を取りに行きます。
+現在のClaude Codeが`~/.claude.json`へ保存する利用率キャッシュから、5時間・週間枠とリセット時刻を取得します。追加プロファイルは、それぞれの`CLAUDE_CONFIG_DIR`、利用率キャッシュ、`projects`ディレクトリを使用します。
+
+キャッシュが15分以内ならそのまま使用し、15分を超えた場合や記録されたリセット時刻を過ぎた場合は、`claude -p "/usage" --output-format json`で最新値を取得します。このコマンドが一時的に失敗しても、リセット前のキャッシュは取得時刻を明示して表示します。リセット時刻を過ぎた枠を以前の値のまま表示することはありません。
 
 **表示する利用率はすべてサービスの報告値です。** 報告されない期間は推定せず`?`と表示します。Claudeの月次枠を勝手に作ることもしません。`~/.claude/projects`のトークン集計は引き続き読みますが、期間ごとのトークン量を表示するためだけに使います。
 
@@ -135,12 +144,14 @@ usagebat.exe -notify-test
 
 ## 設定
 
+トレイメニューの「設定…」から、表示、更新間隔、通知、履歴、更新確認、配色、Claude Code／Codexアカウントを設定できます。変更内容は検証後に保存され、再起動せず反映されます。
+
 設定ファイルは初回起動時に作成されます。
 
 - macOS：`~/Library/Application Support/usagebat/config.json`
 - Windows：`%AppData%\usagebat\config.json`
 
-メニューの「設定ファイルを開く…」から編集できます。保存した変更は再起動せず反映されます。
+プロバイダやCLIの詳細設定には「設定ファイルを開く…」を使用できます。手動で保存した変更も再起動せず反映されます。
 
 主な設定：
 
@@ -153,6 +164,9 @@ usagebat.exe -notify-test
 | `refreshSeconds` | 更新間隔。既定60秒、最小5秒 |
 | `colors.light` / `colors.dark` | テーマ別配色 |
 | `notifications.bankedResetExpiry` | 期限通知と通知タイミング |
+| `history` | ローカル履歴の記録間隔と保存期間 |
+| `updateCheck` | 任意のGitHub更新確認と確認間隔 |
+| `sources.claudeCode.profiles` | 追跡するClaude Codeアカウント、`CLAUDE_CONFIG_DIR`、表示名 |
 | `sources.codex.profiles` | 追跡するCodexアカウントと表示名 |
 | `notifications.limitThresholds` | 残量が閾値を割ったときの通知 |
 
@@ -169,7 +183,7 @@ usagebatには分析サービスがなく、履歴や認証情報を外部へ送
 Go 1.25以降が必要です。
 
 ```sh
-go install github.com/yutat23/usagebat/cmd/usagebat@v0.5.1
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.6.0
 ```
 
 通常のデスクトップ利用には、macOSの`.app`やWindows GUIサブシステム設定を含むRelease版を推奨します。
