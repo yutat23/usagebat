@@ -44,7 +44,7 @@ func (m DisplayMode) Title() string {
 
 // SchemaVersion is the config layout this build writes. Bumping it makes
 // migrate rewrite the file once, so an added setting appears with its default.
-const SchemaVersion = 8
+const SchemaVersion = 9
 
 // Config is the on-disk configuration.
 type Config struct {
@@ -148,6 +148,7 @@ type ThemeColors struct {
 	Unknown    string `json:"unknown"`
 	Claude     string `json:"claude"`
 	Codex      string `json:"codex"`
+	Cursor     string `json:"cursor"`
 	Period     string `json:"period"`
 	TextOnFill string `json:"textOnFill"`
 }
@@ -156,6 +157,7 @@ type ThemeColors struct {
 type Sources struct {
 	ClaudeCode ClaudeCode `json:"claudeCode"`
 	Codex      Codex      `json:"codex"`
+	Cursor     Cursor     `json:"cursor"`
 }
 
 // ClaudeCode configures the local service-usage cache, the legacy /usage
@@ -216,6 +218,29 @@ type Codex struct {
 	Homes []string `json:"homes,omitempty"`
 }
 
+// Cursor configures the dashboard reader.
+//
+// Cursor has no local usage cache and no CLI command that prints a quota, so
+// the figures can only come from Cursor's own dashboard API. The credential is
+// the one `agent login` already stored — in the keychain on macOS, in auth.json
+// on Windows and Linux; usagebat never writes it anywhere.
+type Cursor struct {
+	Enabled        bool `json:"enabled"`
+	TimeoutSeconds int  `json:"timeoutSeconds"`
+	// MinIntervalSeconds throttles the request independently of the refresh
+	// interval, so repeated manual refreshes cannot hammer the dashboard.
+	MinIntervalSeconds int `json:"minIntervalSeconds"`
+	// StaleAfterSeconds is how long the last good reading may stand in for a
+	// failed one before the source reports no figures instead.
+	StaleAfterSeconds int `json:"staleAfterSeconds"`
+	// APIKey overrides the keychain lookup, for machines where the CLI has not
+	// been used to log in. Empty means $CURSOR_API_KEY, then the keychain.
+	APIKey string `json:"apiKey"`
+	// Endpoint overrides the API host. Empty means $CURSOR_API_ENDPOINT, then
+	// Cursor's own.
+	Endpoint string `json:"endpoint"`
+}
+
 // Profile is one account, with the name it is shown under.
 type Profile struct {
 	// Path is the profile directory. "auto" means the standard location.
@@ -262,10 +287,13 @@ func Default() *Config {
 		Version:        SchemaVersion,
 		Language:       "auto",
 		DisplayMode:    ModeBoth,
-		DisplaySources: []string{model.SourceClaudeCode, model.SourceCodex},
+		DisplaySources: []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor},
 		DisplayLimits: map[string]LimitDisplay{
 			model.SourceClaudeCode: {AutoShortest: true, Windows: []string{"5h"}},
 			model.SourceCodex:      {AutoShortest: true, Windows: []string{"5h"}},
+			// Cursor only ever reports its billing cycle, so an explicit
+			// selection of anything else would leave the cell permanently blank.
+			model.SourceCursor: {AutoShortest: true, Windows: []string{"monthly"}},
 		},
 		RefreshSeconds: 60,
 		Icon: Icon{
@@ -277,12 +305,12 @@ func Default() *Config {
 			Light: ThemeColors{
 				Good: "#15803D", Warn: "#A16207", Critical: "#BE123C",
 				Unknown: "#52525B", Claude: "#A94F32", Codex: "#087567",
-				Period: "#25272B", TextOnFill: "#F8FAFC",
+				Cursor: "#6D28D9", Period: "#25272B", TextOnFill: "#F8FAFC",
 			},
 			Dark: ThemeColors{
 				Good: "#4ADE80", Warn: "#FACC15", Critical: "#FB7185",
 				Unknown: "#A1A1AA", Claude: "#E58A68", Codex: "#52C7B8",
-				Period: "#F2F2F2", TextOnFill: "#101010",
+				Cursor: "#A78BFA", Period: "#F2F2F2", TextOnFill: "#101010",
 			},
 			WarnBelow:     50,
 			CriticalBelow: 20,
@@ -324,6 +352,12 @@ func Default() *Config {
 				Enabled:        true,
 				TimeoutSeconds: 15,
 				Profiles:       []Profile{{Path: "auto"}},
+			},
+			Cursor: Cursor{
+				Enabled:            true,
+				TimeoutSeconds:     15,
+				MinIntervalSeconds: 30,
+				StaleAfterSeconds:  900,
 			},
 		},
 	}
@@ -385,6 +419,7 @@ func Load() (*Config, error) {
 // V4 made period selection independent per service. V5 added separate light
 // and dark palettes. V6 added localization and reset-expiry notifications.
 // V7 added the update check. V8 added independently named Claude profiles.
+// V9 added Cursor.
 func (c *Config) migrate(data []byte) bool {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(data, &raw) != nil {
@@ -417,6 +452,12 @@ func (c *Config) migrate(data []byte) bool {
 	}
 	if version < 5 {
 		c.migrateLegacyColors()
+	}
+	if version < 9 {
+		// A source added after the config was written is not one the user chose
+		// to hide, so it joins the icon selection rather than waiting to be
+		// discovered in the settings.
+		c.DisplaySources = append(c.DisplaySources, model.SourceCursor)
 	}
 	c.migrateCodexHomes()
 	if len(c.Sources.ClaudeCode.Profiles) == 0 {
@@ -503,6 +544,9 @@ func fillTheme(dst, defaults ThemeColors) ThemeColors {
 	}
 	if dst.Codex == "" {
 		dst.Codex = defaults.Codex
+	}
+	if dst.Cursor == "" {
+		dst.Cursor = defaults.Cursor
 	}
 	if dst.Period == "" {
 		dst.Period = defaults.Period
@@ -618,6 +662,16 @@ func (c *Config) normalise() {
 	if c.Sources.Codex.TimeoutSeconds <= 0 {
 		c.Sources.Codex.TimeoutSeconds = d.Sources.Codex.TimeoutSeconds
 	}
+	cursor := &c.Sources.Cursor
+	if cursor.TimeoutSeconds <= 0 {
+		cursor.TimeoutSeconds = d.Sources.Cursor.TimeoutSeconds
+	}
+	if cursor.MinIntervalSeconds < 0 {
+		cursor.MinIntervalSeconds = d.Sources.Cursor.MinIntervalSeconds
+	}
+	if cursor.StaleAfterSeconds <= 0 {
+		cursor.StaleAfterSeconds = d.Sources.Cursor.StaleAfterSeconds
+	}
 }
 
 func clampPercents(values []int) []int {
@@ -647,7 +701,7 @@ func normaliseThresholds(values, defaults []int) []int {
 	return out
 }
 
-var allDisplaySources = []string{model.SourceClaudeCode, model.SourceCodex}
+var allDisplaySources = []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor}
 
 // EnabledDisplaySources returns the provider families included in the tray
 // icon. Collection and menu details remain enabled independently under Sources.
@@ -1036,6 +1090,8 @@ func (c *Config) setEditableColorOrProfile(key, value string) error {
 			theme.Claude = value
 		case "codex":
 			theme.Codex = value
+		case "cursor":
+			theme.Cursor = value
 		case "period":
 			theme.Period = value
 		case "textOnFill":

@@ -125,6 +125,9 @@ func TestRebuildCreatesOnlyInstalledProviders(t *testing.T) {
 	}
 	cfg.Sources.ClaudeCode.UsageCommand.Path = fakeClaude
 	cfg.Sources.Codex.Path = filepath.Join(dir, "missing-codex")
+	// Cursor's availability depends on the developer's own keychain, which is
+	// not something a unit test may consult.
+	cfg.Sources.Cursor.Enabled = false
 
 	a := &app{cfg: cfg}
 	a.rebuild()

@@ -125,7 +125,7 @@ func (t Tokens) Total() int64 {
 
 // SourceStatus is everything one provider knows right now.
 type SourceStatus struct {
-	ID   string // "claude-code" / "codex"
+	ID   string // "claude-code" / "codex" / "cursor"
 	Name string // display name, may include the directory a value came from
 	// Short is the one or two characters the icon has room for when several
 	// accounts of one service are drawn. Empty means the caller should derive
@@ -156,6 +156,7 @@ type Snapshot struct {
 const (
 	SourceClaudeCode = "claude-code"
 	SourceCodex      = "codex"
+	SourceCursor     = "cursor"
 )
 
 // Aggregate fills Snapshot.Icon by taking, per window, the source with the

@@ -228,32 +228,26 @@ func (a *app) settingsPage() webui.Page {
 	for _, id := range cfg.EnabledDisplaySources() {
 		selected[id] = true
 	}
-	services := webui.Section{Title: p.T("servicesShown")}
-	for _, source := range []struct{ id, title string }{
-		{model.SourceClaudeCode, "Claude Code"},
-		{model.SourceCodex, "Codex"},
-	} {
-		if !snapshotHasFamily(snap, source.id) {
+	shown := webui.Section{Title: p.T("servicesShown")}
+	for _, source := range services {
+		if !snapshotHasFamily(snap, source.ID) {
 			continue
 		}
-		services.Rows = append(services.Rows, webui.Row{
-			ID: idSourcePfx + source.id, Label: source.title,
-			Kind: webui.KindToggle, Checked: selected[source.id],
+		shown.Rows = append(shown.Rows, webui.Row{
+			ID: idSourcePfx + source.ID, Label: source.Name,
+			Kind: webui.KindToggle, Checked: selected[source.ID],
 		})
 	}
-	add(generalID, generalTitle, services)
+	add(generalID, generalTitle, shown)
 
-	for _, source := range []struct{ id, title string }{
-		{model.SourceClaudeCode, p.T("claudeLimits")},
-		{model.SourceCodex, p.T("codexLimits")},
-	} {
-		if !snapshotHasFamily(snap, source.id) {
+	for _, source := range services {
+		if !snapshotHasFamily(snap, source.ID) {
 			continue
 		}
-		limits := webui.Section{Title: source.title}
-		auto, windows := cfg.LimitSelection(source.id)
+		limits := webui.Section{Title: limitsTitle(source.ID, p)}
+		auto, windows := cfg.LimitSelection(source.ID)
 		limits.Rows = append(limits.Rows, webui.Row{
-			ID: idLimitPfx + source.id + ":auto", Label: p.T("shortest"),
+			ID: idLimitPfx + source.ID + ":auto", Label: p.T("shortest"),
 			Kind: webui.KindToggle, Checked: auto,
 		})
 		enabled := map[model.Window]bool{}
@@ -262,7 +256,7 @@ func (a *app) settingsPage() webui.Page {
 		}
 		for _, w := range model.AllWindows {
 			limits.Rows = append(limits.Rows, webui.Row{
-				ID: idLimitPfx + source.id + ":" + string(w), Label: p.WindowTitle(w),
+				ID: idLimitPfx + source.ID + ":" + string(w), Label: p.WindowTitle(w),
 				Kind: webui.KindToggle, Checked: !auto && enabled[w], Indent: 1,
 			})
 		}
@@ -368,7 +362,7 @@ func (a *app) settingsPage() webui.Page {
 	colorFields := []struct{ key, label string }{
 		{"good", "colorGood"}, {"warn", "colorWarn"}, {"critical", "colorCritical"},
 		{"unknown", "colorUnknown"}, {"claude", "colorClaude"}, {"codex", "colorCodex"},
-		{"period", "colorPeriod"}, {"textOnFill", "colorTextOnFill"},
+		{"cursor", "colorCursor"}, {"period", "colorPeriod"}, {"textOnFill", "colorTextOnFill"},
 	}
 	for _, theme := range []struct {
 		key, title string
@@ -378,7 +372,8 @@ func (a *app) settingsPage() webui.Page {
 		values := map[string]string{
 			"good": theme.colors.Good, "warn": theme.colors.Warn, "critical": theme.colors.Critical,
 			"unknown": theme.colors.Unknown, "claude": theme.colors.Claude, "codex": theme.colors.Codex,
-			"period": theme.colors.Period, "textOnFill": theme.colors.TextOnFill,
+			"cursor": theme.colors.Cursor, "period": theme.colors.Period,
+			"textOnFill": theme.colors.TextOnFill,
 		}
 		section := webui.Section{Title: theme.title}
 		for _, field := range colorFields {

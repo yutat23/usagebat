@@ -9,7 +9,7 @@ import (
 	"github.com/yutat23/usagebat/internal/model"
 )
 
-func TestDefaultShowsBothServicesAndShortestLimit(t *testing.T) {
+func TestDefaultShowsEveryServiceAndShortestLimit(t *testing.T) {
 	c := Default()
 	for _, source := range []string{model.SourceClaudeCode, model.SourceCodex} {
 		auto, got := c.LimitSelection(source)
@@ -17,9 +17,15 @@ func TestDefaultShowsBothServicesAndShortestLimit(t *testing.T) {
 			t.Fatalf("default %s limits = auto %v, %v", source, auto, got)
 		}
 	}
-	if got := c.EnabledDisplaySources(); len(got) != 2 ||
-		got[0] != model.SourceClaudeCode || got[1] != model.SourceCodex {
-		t.Fatalf("default display sources = %v, want both services", got)
+	// Cursor only ever reports its billing cycle, so its explicit fallback is
+	// the monthly window rather than the 5h one the others start on.
+	if auto, got := c.LimitSelection(model.SourceCursor); !auto ||
+		len(got) != 1 || got[0] != model.WindowMonthly {
+		t.Fatalf("default Cursor limits = auto %v, %v", auto, got)
+	}
+	want := []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor}
+	if got := c.EnabledDisplaySources(); !sameStrings(got, want) {
+		t.Fatalf("default display sources = %v, want %v", got, want)
 	}
 	// Claude percentages come from the service; there is no budget to calibrate.
 	if c.Sources.ClaudeCode.Weights.Output <= 0 {
@@ -125,14 +131,36 @@ func TestToggleDisplaySourcePersistsAndKeepsOne(t *testing.T) {
 	if err := c.ToggleDisplaySource(model.SourceClaudeCode); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.EnabledDisplaySources(); len(got) != 1 || got[0] != model.SourceCodex {
+	if got := c.EnabledDisplaySources(); !sameStrings(got, []string{model.SourceCodex, model.SourceCursor}) {
 		t.Fatalf("sources after disabling Claude = %v", got)
+	}
+	if err := c.ToggleDisplaySource(model.SourceCursor); err != nil {
+		t.Fatal(err)
 	}
 	if err := c.ToggleDisplaySource(model.SourceCodex); err != nil {
 		t.Fatal(err)
 	}
 	if got := c.EnabledDisplaySources(); len(got) != 1 || got[0] != model.SourceCodex {
 		t.Fatalf("last source should stay selected, got %v", got)
+	}
+}
+
+// A config written before Cursor existed listed only the two services it knew
+// about. Migration has to add the new one, or an upgrade would leave it
+// collected but invisible until somebody found the setting.
+func TestV8MigrationAddsCursorToTheIcon(t *testing.T) {
+	c := Default()
+	c.DisplaySources = []string{model.SourceClaudeCode, model.SourceCodex}
+	if !c.migrate([]byte(`{"version":8}`)) {
+		t.Fatal("expected v8 to migrate")
+	}
+	c.normalise()
+	want := []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor}
+	if got := c.EnabledDisplaySources(); !sameStrings(got, want) {
+		t.Fatalf("migrated display sources = %v, want %v", got, want)
+	}
+	if auto, windows := c.LimitSelection(model.SourceCursor); !auto || len(windows) != 1 {
+		t.Fatalf("migrated Cursor limits = auto %v, %v", auto, windows)
 	}
 }
 

@@ -4,7 +4,7 @@
 
 <img src="assets/usagebat.png" width="160" alt="usagebat pixel-art battery bat icon">
 
-usagebat keeps the remaining Claude Code and Codex limits visible as a small pixel-art battery in the macOS menu bar or Windows system tray.
+usagebat keeps the remaining Claude Code, Codex, and Cursor limits visible as a small pixel-art battery in the macOS menu bar or Windows system tray.
 
 It shows remaining capacity, not usage: `100%` is full, and the battery drains as you work.
 
@@ -23,9 +23,9 @@ Windows tray icons have a fixed square shape. With the default `stack` layout, o
 ## Features
 
 - Shows real 5-hour, weekly, or monthly limits when the service provides them
-- Keeps Claude Code and Codex in separate cells, with independent period settings
-- Lets you show Claude Code only, Codex only, or both
-- Automatically hides a service when its CLI is not installed
+- Keeps Claude Code, Codex, and Cursor in separate cells, with independent period settings
+- Lets you show any combination of the three services
+- Automatically hides a service when its CLI is not installed or not signed in
 - Shows reset times and token details in the tray menu
 - Offers battery with percentage, battery-only, and percentage-only styles
 - Changes from green to yellow below 50%, then red below 20%
@@ -50,8 +50,9 @@ Most Windows computers need the `amd64` build. Use `arm64` only for a Windows on
 
 At least one supported CLI must be installed and signed in:
 
-- [Claude Code](https://code.claude.com/docs), or
-- [OpenAI Codex](https://developers.openai.com/codex/cli)
+- [Claude Code](https://code.claude.com/docs),
+- [OpenAI Codex](https://developers.openai.com/codex/cli), or
+- [Cursor CLI](https://cursor.com/cli) (`agent login`)
 
 ### macOS
 
@@ -75,7 +76,7 @@ Click the menu-bar item on macOS, or right-click the tray icon on Windows. The m
 
 - inspect every reported limit and its reset time;
 - choose the icon style;
-- include Claude Code, Codex, or both;
+- include any combination of Claude Code, Codex, and Cursor;
 - choose a different period for each service;
 - refresh immediately;
 - open the configuration file;
@@ -84,9 +85,9 @@ Click the menu-bar item on macOS, or right-click the tray icon on Windows. The m
 - switch between system-default, English, and Japanese UI text; and
 - see the running version and open the project on GitHub.
 
-By default, usagebat selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CXMO` is a Codex monthly limit.
+By default, usagebat selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CUMO` is Cursor's billing-cycle limit.
 
-The icon follows the system bar appearance. `CL` uses a Claude terracotta, `CX` uses a Codex teal, and all period suffixes (`5H`, `WK`, and `MO`) share a neutral high-contrast color. Battery status colors also switch between light and dark variants so warning yellow and other details remain legible.
+The icon follows the system bar appearance. `CL` uses a Claude terracotta, `CX` a Codex teal, and `CU` a Cursor violet; all period suffixes (`5H`, `WK`, and `MO`) share a neutral high-contrast color. Battery status colors also switch between light and dark variants so warning yellow and other details remain legible.
 
 If Claude Code or Codex has multiple configured accounts, each account gets its own cell. A configured `short` replaces the generic `CL`/`CX` label, so work and personal profiles can appear as `CW` and `CP`. A single unnamed default profile keeps the compact service label:
 
@@ -107,6 +108,8 @@ If Claude Code or Codex has multiple configured accounts, each account gets its 
   }
 }
 ```
+
+Cursor has no profile list: its credential store holds one account per machine, so signing in again replaces the previous account rather than adding one.
 
 `short` is what the icon has room for; it replaces the `CL`/`CX` prefix, and the colour still says which service it is. The menu and the charts use `label`.
 Profile order is shared by the icon, tray menu, and charts, and can be changed from the Accounts settings tab.
@@ -133,6 +136,38 @@ It can also ask `claude -p "/usage" --output-format json` directly, which is wha
 
 Every percentage comes from the service. A window it does not report is shown as `?` rather than guessed at, and usagebat does not invent a monthly Claude limit. The per-response token tallies in `~/.claude/projects` are still read, but only to report how many tokens went through each window.
 
+### Cursor
+
+Cursor caches no usage figure on disk and its CLI has no command that prints one, so usagebat asks Cursor's own dashboard API — `GetCurrentPeriodUsage` and `GetPlanInfo` — using the credential `agent login` already stored on this machine. usagebat only reads it: the token is never written to the config file, the history file, or the log, and it is sent nowhere but Cursor's own host.
+
+The CLI's official command is `agent`; `cursor-agent` is an alias for the same binary left by its versioned install directory.
+
+Where that credential lives depends on the platform, because the CLI only reaches for a keychain on macOS:
+
+| Platform | Primary | Fallback |
+|---|---|---|
+| macOS | login keychain, via `security` | `~/.cursor/auth.json` |
+| Windows | `%APPDATA%\Cursor\auth.json` | Credential Manager, via `advapi32` |
+| Linux | `$XDG_CONFIG_HOME/cursor/auth.json` (default `~/.config/cursor/auth.json`) | `secret-tool` |
+
+On Windows the Credential Manager entry name — when there is one — is chosen by whichever keychain binding the installed CLI was built against, is undocumented, and does not match the other platforms. usagebat therefore tries the names it knows and then enumerates the store, accepting an entry whose name contains both `cursor` and `token` or `access`. Both halves are required so that a saved git password for a repository with `cursor` in its URL is never mistaken for the token and sent to Cursor.
+
+A CLI installed under WSL keeps its credential inside WSL, where a Windows build of usagebat cannot reach it at all. An API key is the way in that does not depend on finding it:
+
+```json
+"sources": { "cursor": { "apiKey": "key_..." } }
+```
+
+It is deliberately not on the settings page: a token belongs in the config file, not in a field on a local web server.
+
+**No account means no requests.** Cursor appears in the menu only once you are signed in, judged by two independent signals: a credential found in either place above, or the `authId` marker the CLI writes to `~/.cursor/cli-config.json` (that file holds no secret). The macOS keychain check asks only whether the item exists and never reads its secret, so it cannot raise a permission prompt on a machine that does not use Cursor. Either signal is enough — if the token turns out to be unreadable, the menu says so on a row you can act on rather than dropping the service silently. Set `sources.cursor.enabled` to `false` to switch the source off entirely.
+
+Cursor accounts per billing cycle and reports nothing shorter, so the figure lands on the monthly window with `billingCycleEnd` as its reset time. The percentage is the API's own `totalPercentUsed`, which is what the Cursor CLI shows. It is deliberately never reconstructed from `includedSpend` and `limit`: those are a different scale — a live account reading 2.9% carried an amount ratio of 50% — so a response without the percentage is reported as having no figure rather than being approximated into a wrong one.
+
+Pay-as-you-go spending sits outside the included quota and cannot be folded into the same battery, so it is shown in the menu heading as `on-demand $0.00 / $50.00`.
+
+Requests are throttled to one per `sources.cursor.minIntervalSeconds` (30 by default), which **Refresh now** bypasses. If a request fails, the last good reading stays visible, marked as such, for up to `staleAfterSeconds` (900 by default) before being discarded.
+
 ## Configuration
 
 Choose **Settings…** from the tray menu to edit the usual display, refresh,
@@ -156,6 +191,7 @@ Common settings include:
 | `displaySources` | Services included in the icon |
 | `displayLimits.claude-code` | Claude Code's automatic or explicit periods |
 | `displayLimits.codex` | Codex's automatic or explicit periods |
+| `displayLimits.cursor` | Cursor's automatic or explicit periods |
 | `refreshSeconds` | Refresh interval; 60 seconds by default |
 | `icon.dotSize` | macOS menu-bar artwork size |
 | `icon.windowsLayout` | `stack` or `single` on Windows |
@@ -168,6 +204,9 @@ Common settings include:
 | `sources.claudeCode.profiles` | Claude Code accounts to track, with their `CLAUDE_CONFIG_DIR` and display names |
 | `sources.codex.path` | Explicit Codex executable path, if auto-detection fails |
 | `sources.codex.profiles` | Codex accounts to track, with the names they are shown under |
+| `sources.cursor.enabled` | Whether to read Cursor at all |
+| `sources.cursor.apiKey` | Token to use instead of the OS credential store |
+| `sources.cursor.minIntervalSeconds` | Shortest gap between dashboard requests |
 | `notifications.limitThresholds` | Warn when headroom drops past a percentage |
 
 The default theme palettes can be customized independently. Changes are picked up while usagebat is running:
@@ -177,12 +216,12 @@ The default theme palettes can be customized independently. Changes are picked u
   "light": {
     "good": "#15803D", "warn": "#A16207", "critical": "#BE123C",
     "unknown": "#52525B", "claude": "#A94F32", "codex": "#087567",
-    "period": "#25272B", "textOnFill": "#F8FAFC"
+    "cursor": "#6D28D9", "period": "#25272B", "textOnFill": "#F8FAFC"
   },
   "dark": {
     "good": "#4ADE80", "warn": "#FACC15", "critical": "#FB7185",
     "unknown": "#A1A1AA", "claude": "#E58A68", "codex": "#52C7B8",
-    "period": "#F2F2F2", "textOnFill": "#101010"
+    "cursor": "#A78BFA", "period": "#F2F2F2", "textOnFill": "#101010"
   },
   "warnBelow": 50,
   "criticalBelow": 20
@@ -224,6 +263,8 @@ For Claude Code, `"auto"` uses `$CLAUDE_CONFIG_DIR`, or `~/.claude` when unset. 
 
 Each home is shown as a separate account. usagebat deliberately does not scan arbitrary `.codex-*` directories because that could display a different account without the user selecting it.
 
+Cursor is not part of this: its credential store holds a single account, so there is nothing to enumerate.
+
 ## Automatic startup
 
 Enable **Launch at startup** in the tray menu. It creates a per-user LaunchAgent on macOS or a per-user Run entry on Windows, so administrator access is not required.
@@ -232,7 +273,7 @@ The registration points to the app's current location. If you move the app or ex
 
 ## Privacy
 
-usagebat has no analytics service and does not upload your transcripts or credentials. It reads local CLI state and asks the installed Codex CLI for account limit data. Authentication remains managed by Claude Code and Codex. Notification state stores only a shortened hash of the profile, reset ID, and expiry—not the raw reset ID.
+usagebat has no analytics service and does not upload your transcripts or credentials. It reads local CLI state, asks the installed Codex CLI for account limit data, and — only when a Cursor credential exists — asks Cursor's dashboard API for your own plan usage. That Cursor token is read from the OS credential store, sent to Cursor's host alone, and never written to disk by usagebat. Authentication remains managed by Claude Code, Codex, and Cursor. Notification state stores only a shortened hash of the profile, reset ID, and expiry—not the raw reset ID.
 
 ## Troubleshooting
 

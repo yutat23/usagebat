@@ -177,11 +177,5 @@ func seriesLabel(series history.Series, snap *model.Snapshot, p i18n.Printer) st
 			break
 		}
 	}
-	switch name {
-	case model.SourceClaudeCode:
-		name = "Claude Code"
-	case model.SourceCodex:
-		name = "Codex"
-	}
-	return name + " · " + p.WindowTitle(series.Window)
+	return serviceName(name) + " · " + p.WindowTitle(series.Window)
 }

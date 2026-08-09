@@ -1,4 +1,4 @@
-// Command usagebat shows Claude Code and Codex limit headroom as a
+// Command usagebat shows Claude Code, Codex and Cursor limit headroom as a
 // pixel-art battery in the macOS menu bar or the Windows tray.
 package main
 
@@ -29,6 +29,7 @@ import (
 	"github.com/yutat23/usagebat/internal/provider"
 	"github.com/yutat23/usagebat/internal/provider/claudecode"
 	"github.com/yutat23/usagebat/internal/provider/codex"
+	"github.com/yutat23/usagebat/internal/provider/cursor"
 	"github.com/yutat23/usagebat/internal/render"
 	"github.com/yutat23/usagebat/internal/tray"
 	"github.com/yutat23/usagebat/internal/update"
@@ -246,6 +247,11 @@ func (a *app) rebuild() {
 			a.providers = append(a.providers, p)
 		}
 	}
+	if a.cfg.Sources.Cursor.Enabled && cursor.Available(&a.cfg.Sources.Cursor) {
+		for _, p := range cursor.Providers(&a.cfg.Sources.Cursor) {
+			a.providers = append(a.providers, p)
+		}
+	}
 }
 
 // currentConfig returns the live config pointer. Its own methods are
@@ -368,20 +374,46 @@ func (a *app) deliver(events []notifyengine.Event, now time.Time) {
 	}
 }
 
+// services are the provider families, in the order they are offered wherever
+// the user picks between them: the menu, the settings page and the icon.
+var services = []struct{ ID, Name string }{
+	{model.SourceClaudeCode, "Claude Code"},
+	{model.SourceCodex, "Codex"},
+	{model.SourceCursor, "Cursor"},
+}
+
+// serviceName is the display name of a family, falling back to the raw id so
+// an unknown source is still identifiable rather than blank.
+func serviceName(id string) string {
+	for _, service := range services {
+		if service.ID == id {
+			return service.Name
+		}
+	}
+	return id
+}
+
+// limitsTitle heads the section that chooses which of a service's periods the
+// icon draws.
+func limitsTitle(id string, p i18n.Printer) string {
+	switch id {
+	case model.SourceClaudeCode:
+		return p.T("claudeLimits")
+	case model.SourceCodex:
+		return p.T("codexLimits")
+	case model.SourceCursor:
+		return p.T("cursorLimits")
+	}
+	return serviceName(id)
+}
+
 // watchedGauges are the limits the icon is drawing, which is how the user has
 // already said which ones they care about.
 func watchedGauges(cfg *config.Config, snap *model.Snapshot, p i18n.Printer) []notifyengine.Gauge {
 	var out []notifyengine.Gauge
 	for _, cell := range displayCells(cfg, snap) {
-		name := cell.Service
-		switch name {
-		case model.SourceClaudeCode:
-			name = "Claude Code"
-		case model.SourceCodex:
-			name = "Codex"
-		}
 		out = append(out, notifyengine.Gauge{
-			Source: cell.Service, Name: name,
+			Source: cell.Service, Name: serviceName(cell.Service),
 			Window: cell.Status.Window, Status: cell.Status,
 		})
 	}
@@ -746,33 +778,27 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time, p i18n.P
 	for _, id := range cfg.EnabledDisplaySources() {
 		selectedSources[id] = true
 	}
-	for _, source := range []struct{ id, title string }{
-		{model.SourceClaudeCode, "Claude Code"},
-		{model.SourceCodex, "Codex"},
-	} {
-		if !snapshotHasFamily(snap, source.id) {
+	for _, source := range services {
+		if !snapshotHasFamily(snap, source.ID) {
 			continue
 		}
 		items = append(items, tray.Item{
-			ID:        idSourcePfx + source.id,
-			Title:     source.title,
+			ID:        idSourcePfx + source.ID,
+			Title:     source.Name,
 			Indent:    1,
 			Checkable: true,
-			Checked:   selectedSources[source.id],
+			Checked:   selectedSources[source.ID],
 		})
 	}
 
-	for _, source := range []struct{ id, title string }{
-		{model.SourceClaudeCode, p.T("claudeLimits")},
-		{model.SourceCodex, p.T("codexLimits")},
-	} {
-		if !snapshotHasFamily(snap, source.id) {
+	for _, source := range services {
+		if !snapshotHasFamily(snap, source.ID) {
 			continue
 		}
-		items = append(items, tray.Item{Title: source.title, Disabled: true})
-		auto, windows := cfg.LimitSelection(source.id)
+		items = append(items, tray.Item{Title: limitsTitle(source.ID, p), Disabled: true})
+		auto, windows := cfg.LimitSelection(source.ID)
 		items = append(items, tray.Item{
-			ID:        idLimitPfx + source.id + ":auto",
+			ID:        idLimitPfx + source.ID + ":auto",
 			Title:     p.T("shortest"),
 			Indent:    1,
 			Checkable: true,
@@ -784,7 +810,7 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time, p i18n.P
 		}
 		for _, w := range model.AllWindows {
 			items = append(items, tray.Item{
-				ID:        idLimitPfx + source.id + ":" + string(w),
+				ID:        idLimitPfx + source.ID + ":" + string(w),
 				Title:     p.WindowTitle(w),
 				Indent:    1,
 				Checkable: true,

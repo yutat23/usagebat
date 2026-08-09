@@ -2,7 +2,7 @@
 
 ## 1. これは何か
 
-Claude Code / Codex の **利用上限（5時間・週次・月次）の残量** を、
+Claude Code / Codex / Cursor の **利用上限（5時間・週次・月次）の残量** を、
 macOS のメニューバー / Windows のタスクトレイに **ドット絵のバッテリー** として常駐表示するアプリ。
 
 - 残量 100% = 満充電、使うほど減る（バッテリーの比喩をそのまま採用）
@@ -14,7 +14,7 @@ macOS のメニューバー / Windows のタスクトレイに **ドット絵の
 
 | 用語 | 意味 |
 |---|---|
-| ソース (source) | 計測対象のツール。`claude-code` / `codex` |
+| ソース (source) | 計測対象のツール。`claude-code` / `codex` / `cursor` |
 | ウィンドウ (window) | 上限の集計期間。`5h` / `weekly` / `monthly` |
 | used% | そのウィンドウで消費済みの割合 |
 | remaining% | `100 - used%`。バッテリーに表示するのはこちら |
@@ -22,7 +22,7 @@ macOS のメニューバー / Windows のタスクトレイに **ドット絵の
 
 ## 3. データ取得方式（重要）
 
-**2つのソースで取得可能な情報の質が根本的に違う。** ここが本アプリ最大の設計上の制約。
+**ソースごとに取得可能な情報の質が根本的に違う。** ここが本アプリ最大の設計上の制約。
 
 ### 3.1 Codex — 実測値が取れる
 
@@ -162,7 +162,104 @@ macOS のメニューバー / Windows のタスクトレイに **ドット絵の
 
 `weeklyMode` / `monthlyMode` は、このトークン集計の期間境界を決めるためだけに残る。
 
-### 3.4 ソースの優先順位
+### 3.4 Cursor — ダッシュボードAPIに直接聞くしかない
+
+Cursorだけは**ローカルに読めるものが何もない**。利用率をキャッシュするファイルはなく、
+`cursor-agent` にも使用量を表示するサブコマンドがない（`status` は認証状態のみ）。
+したがって Cursor のダッシュボードAPIへ直接問い合わせる。本アプリで唯一、
+**サービスの中身を取りに行くためにネットワークを使うプロバイダ**である。
+
+```
+POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage
+POST https://api2.cursor.sh/aiserver.v1.DashboardService/GetPlanInfo
+Authorization: Bearer <token>
+Connect-Protocol-Version: 1
+Body: {}
+```
+
+**CLIのコマンド名**: 公式には **`agent`**（`curl https://cursor.com/install -fsS | bash`、
+Windows は `irm 'https://cursor.com/install?win32=true' | iex`）。
+`cursor-agent` はバージョン付きインストール先 `~/.local/share/cursor-agent/versions/…` に
+由来するエイリアスで、実体は同じバイナリ。**案内文は `agent login` に統一する。**
+
+**認証情報の在り処はOSで違う。ここを取り違えたのが最初の実装のバグだった。**
+**CLIがキーチェーンを使うのは macOS だけで、Windows と Linux は `auth.json` に書く。**
+Windowsで資格情報マネージャーをどんな名前で探しても見つからなかったのはこのため。
+
+| OS | 一次 | フォールバック |
+|---|---|---|
+| macOS | キーチェーン `security find-generic-password` | `~/.cursor/auth.json` |
+| Windows | `%APPDATA%\Cursor\auth.json` | `advapi32.CredReadW` → `CredEnumerateW` |
+| Linux | `$XDG_CONFIG_HOME/cursor/auth.json`（既定 `~/.config/cursor/auth.json`） | `secret-tool lookup` |
+
+`auth.json` は `{"accessToken": "...", "refreshToken": "..."}` という形。読むのは
+`accessToken` だけ。ファイルはあるが `accessToken` が無い状態は「ファイルが無い」とは
+別の障害なので、メッセージも分ける。
+
+キーチェーン側のサービス名は `cursor-access-token` / アカウント `cursor-user`。
+**Windowsのエントリ名は決め打ちにしない。** ターゲット名はCLIがどのkeychainバインディングで
+ビルドされたかで決まり、公開ドキュメントも無くプラットフォーム間で一致しない。
+そのため既知名の直接読み取りは**速い経路**としてだけ残し、外れた場合は
+`CredEnumerateW(NULL, CRED_ENUMERATE_ALL_CREDENTIALS, …)` で全件を列挙して名前で拾う。
+なお `CredEnumerateW` 自身のフィルタは「前方一致 + `*`」しか対応しないため、
+`*cursor*` のような指定はできない。
+
+拾う条件は**「cursor を含み、かつ token または access を含む」**とする。
+`cursor` だけで一致させると、URLに cursor を含むリポジトリのgitパスワードを拾って
+**Cursorのサーバーへ送りかねない**。見つからないことより悪い失敗になる。
+
+**どのOSでも `sources.cursor.apiKey` と `$CURSOR_API_KEY` を最優先で見る。** 保存場所が
+未公開で環境差があり、WSLへ入れたCLIの資格情報はWindows側から原理的に見えない以上、
+トークン探索に依存しない経路を必ず残す。
+
+トークンは読むだけで、設定ファイル・履歴・ログのどこにも書かない。送信先はCursorのホストのみ。
+**アカウントが無ければソース自体を出さない。** 判定は独立した2つの信号を見る。
+
+1. 上表の一次またはフォールバックでトークンが取れるか。macOSのキーチェーン確認は
+   `-w` を付けずに存在だけを見るので、Cursorを使っていない人に許可ダイアログは出ず、
+   リクエストも発生しない
+2. `~/.cursor/cli-config.json` に `authId` / `authInfo` があるか（＝ログイン済みの印）。
+   このファイルに秘密情報は無く、トークンをディスクから読むことはない
+
+**片方だけでも成立すれば表示する。** 資格情報の名前解決は上記のとおり壊れうる一方、
+ログイン済みの印は壊れない。トークンが読めないときに黙って消えると利用者は手の打ちようが
+ないが、「no Cursor credential; run `agent login`」の行が出れば直せる。
+
+**ウィンドウの対応付け**: Cursorの枠は請求サイクル単位で、それより短い枠は返ってこない。
+したがって `monthly` にのみ写し、`resetsAt` は `billingCycleEnd` とする。
+
+**どの数値を使うか（重要）**: レスポンスには互いに一致しない数字が複数入っている。
+実測した例では次の3つが同時に返った。
+
+```jsonc
+"planUsage": {
+  "includedSpend": 1008, "remaining": 992, "limit": 2000,   // 金額比だと 50.4% 使用
+  "autoPercentUsed": 3.36, "apiPercentUsed": 0,
+  "totalPercentUsed": 2.9217391304347826                     // = (3.36×100 + 0×15) / 115
+},
+"displayMessage": "You've used 14% of your included usage"    // どれとも一致しない
+```
+
+バッテリーに出すのは **`totalPercentUsed`** とする。そのうえで：
+
+- **`includedSpend / limit` から百分率を作り直さない。** 上の例のとおり両者は50ポイント以上
+  ずれる。別の尺度なので、フィールドが欠けたときの緩やかな代替にはならず、
+  ただの誤った残量になる。`totalPercentUsed` が無ければ**枠なし**として扱う（§3.3 と同じ方針）
+- **`displayMessage` はメニューの補足には出さない。** 3% と 14% が1行に並べば、
+  Cursorが別々に持っている2つの数字ではなく、usagebat のバグに見える。
+  百分率がまったく取れなかったとき（法人課金など）に限り、理由としてこの文言を出す
+- `autoPercentUsed` / `apiPercentUsed` は内訳として `Detail` に持つ
+
+**スロットルと劣化**: Claude の `/usage` と同じ考え方で、`minIntervalSeconds`（既定30秒）
+未満の再取得はしない。失敗した場合は `staleAfterSeconds`（既定900秒）以内なら直前の成功値を
+「前回の取得値」と明示して再利用し、超えたら破棄して値なしとする。
+メニューの「今すぐ更新」はスロットルを無視して取りに行く。
+
+**プロファイル**: 資格情報は1台につき1つで、2つ目のアカウントにするには
+`agent login` をやり直して置き換えることになる。列挙するものが無いので、
+Codex のような複数プロファイルは持たない。
+
+### 3.5 ソースの優先順位
 
 ウィンドウごとに次の順で決める：
 
@@ -174,7 +271,7 @@ macOS のメニューバー / Windows のタスクトレイに **ドット絵の
 すべてサービスの報告値であり、推定は存在しない。
 トークン実数（in / out / cache / weighted）は 1〜4 のどれでも常に表示する。
 
-### 3.5 ウィンドウ境界の決め方（Claude Code のトークン集計）
+### 3.6 ウィンドウ境界の決め方（Claude Code のトークン集計）
 
 | ウィンドウ | 既定 | 備考 |
 |---|---|---|
@@ -245,13 +342,14 @@ ICO は 16/20/24/32 px のマルチサイズで出力し、DPI スケーリン�
 メニューバー／タスクバーのライト・ダークをOSから判定し、テーマ別の配色を使う。
 キャラクターの表情は使用量・残量によって変化させない。ツールを多く使ったことを
 否定的に評価する印象を避け、残量の状態表現はバッテリー、数値、配色、グラフだけが担う。
-サービス略号と期間は役割を分け、`CL`/`CX` はサービス色、`5H`/`WK`/`MO`
+サービス略号と期間は役割を分け、`CL`/`CX`/`CU` はサービス色、`5H`/`WK`/`MO`
 はすべて同じ高コントラストな期間色で描く。
 
 | 要素 | ライト | ダーク |
 |---|---|---|
 | Claude (`CL`) | `#A94F32` | `#E58A68` |
 | Codex (`CX`) | `#087567` | `#52C7B8` |
+| Cursor (`CU`) | `#6D28D9` | `#A78BFA` |
 | 期間 (`5H/WK/MO`) | `#25272B` | `#F2F2F2` |
 | accent（残量 ≥ 50%） | `#15803D` | `#4ADE80` |
 | accent（残量 ≥ 20%） | `#A16207` | `#FACC15` |
@@ -273,6 +371,9 @@ Claude Code  —  reported by /usage      ← 見出し（無効項目）
 Codex (~/.codex-work)  —  plan: team    ← ホームごとに独立した見出し
   Monthly  100% left  ·  resets Aug 30 12:47
       latest session: in 61.1K · out 402 · cache 49.4K
+──────────
+Cursor  —  live via Cursor · plan: Pro · on-demand $0.00 / $50.00
+  Monthly   97% left  ·  resets Sep 7 14:39
 ──────────
 表示 ▸  ● バッテリー + %
         ○ バッテリーのみ
@@ -328,6 +429,7 @@ internal/notify/                 banked reset期限判定・永続的な重複�
 internal/provider/               Provider インタフェース
 internal/provider/claudecode/    利用量キャッシュ・/usage・トークン集計
 internal/provider/codex/         Codexライブ制限 + rollout jsonlフォールバック
+internal/provider/cursor/        CursorダッシュボードAPI + OS資格情報ストア読み取り
 internal/render/font.go          3×5 ピクセルフォント
 internal/render/battery.go       スプライト描画 / ストリップ・スタックレイアウト
 internal/render/ico.go           Windows 用 ICO エンコーダ（マルチサイズ）
@@ -358,13 +460,15 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 
 ```jsonc
 {
-  "version": 8,
+  "version": 9,
   "language": "auto",              // auto | en | ja
   "displayMode": "both",           // both | battery | percent
-  "displaySources": ["claude-code", "codex"],
+  "displaySources": ["claude-code", "codex", "cursor"],
   "displayLimits": {
     "claude-code": { "autoShortest": true, "windows": ["5h"] },
-    "codex": { "autoShortest": true, "windows": ["5h"] }
+    "codex": { "autoShortest": true, "windows": ["5h"] },
+    // Cursorは請求サイクル枠しか返さないので、明示指定の既定もmonthly
+    "cursor": { "autoShortest": true, "windows": ["monthly"] }
   },
   "refreshSeconds": 60,
   "icon": {
@@ -376,12 +480,12 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
     "light": {
       "good": "#15803D", "warn": "#A16207", "critical": "#BE123C",
       "unknown": "#52525B", "claude": "#A94F32", "codex": "#087567",
-      "period": "#25272B", "textOnFill": "#F8FAFC"
+      "cursor": "#6D28D9", "period": "#25272B", "textOnFill": "#F8FAFC"
     },
     "dark": {
       "good": "#4ADE80", "warn": "#FACC15", "critical": "#FB7185",
       "unknown": "#A1A1AA", "claude": "#E58A68", "codex": "#52C7B8",
-      "period": "#F2F2F2", "textOnFill": "#101010"
+      "cursor": "#A78BFA", "period": "#F2F2F2", "textOnFill": "#101010"
     },
     "warnBelow": 50, "criticalBelow": 20
   },
@@ -415,6 +519,14 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
       "path": "",                 // 空 = Codex CLIを自動検出
       "timeoutSeconds": 15,
       "profiles": [{ "path": "auto", "label": "", "short": "" }]
+    },
+    "cursor": {
+      "enabled": true,
+      "timeoutSeconds": 15,
+      "minIntervalSeconds": 30,   // refreshSeconds と独立したスロットル
+      "staleAfterSeconds": 900,   // 直前の成功値を再利用してよい上限
+      "apiKey": "",               // 空 = $CURSOR_API_KEY、次にOS資格情報ストア
+      "endpoint": ""              // 空 = $CURSOR_API_ENDPOINT、次にCursorの既定
     }
   }
 }
@@ -423,10 +535,11 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 ## 7. アイコンに出す値の集約
 
 既定の `autoShortest` では、サービスごとに実在する最短枠を1つ選び、別セルで表示する。
-たとえばClaudeの5h枠は `CL5H`、Codex Teamの月次枠は `CXMO` となる。
+たとえばClaudeの5h枠は `CL5H`、Codex Teamの月次枠は `CXMO`、Cursorの請求サイクル枠は
+`CUMO` となる。
 Codexに複数アカウントがある場合は、アカウントごとに別セルで表示する。
 設定された `short` を `CX` の代わりに描き、アカウントを見分けられるようにする。
-サービスは Claude Code のみ / Codex のみ / 両方から選べる。
+表示するサービスは3つから任意に選べる。
 固定期間も `displayLimits` によりサービスごとに独立し、Claudeを5h、Codexをmonthlyのように
 別々に指定できる。
 バッテリーとして意味があるのは「あと何ができるか」なので、最も逼迫した制約が正しい。
