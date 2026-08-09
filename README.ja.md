@@ -38,9 +38,9 @@ Windowsのトレイアイコンは正方形に固定されています。既定�
 
 | 環境 | ファイル |
 |---|---|
-| macOS（Apple Silicon / Intel） | `usagebat_0.6.0_macOS_universal.zip` |
-| Windows Intel / AMD | `usagebat_0.6.0_windows_amd64.zip` |
-| Windows on ARM | `usagebat_0.6.0_windows_arm64.zip` |
+| macOS（Apple Silicon / Intel） | `usagebat_0.6.1_macOS_universal.zip` |
+| Windows Intel / AMD | `usagebat_0.6.1_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.6.1_windows_arm64.zip` |
 
 Claude Code・Codex・Cursor CLI（`agent login`）のいずれかがインストールされ、ログイン済みである必要があります。
 
@@ -222,7 +222,7 @@ usagebatには分析サービスがなく、履歴や認証情報を外部へ送
 Go 1.25以降が必要です。
 
 ```sh
-go install github.com/yutat23/usagebat/cmd/usagebat@v0.6.0
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.6.1
 ```
 
 通常のデスクトップ利用には、macOSの`.app`やWindows GUIサブシステム設定を含むRelease版を推奨します。

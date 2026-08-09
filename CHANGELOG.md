@@ -1,6 +1,47 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 — 2026-08-09
+
+### Added
+
+- Added Cursor as a third source, drawn as a `CU` cell in a Cursor violet, with its own service toggle, period selection, and palette entry. Cursor accounts per billing cycle and reports nothing shorter, so its figure lands on the monthly window
+- Read the Cursor figure from Cursor's dashboard API, using the credential `agent login` already stored on this machine — the login keychain on macOS, `auth.json` on Windows (`%APPDATA%\Cursor`) and Linux (`$XDG_CONFIG_HOME/cursor`), with a Credential Manager lookup behind it on Windows. The token is only ever read, is never written to the config file, history or log, and is sent nowhere but Cursor's own host
+- Showed Cursor's pay-as-you-go spending in the menu heading, since it sits outside the included quota and cannot share the battery
+- Added `sources.cursor.apiKey` for machines whose stored credential cannot be reached, such as a CLI installed under WSL, and `sources.cursor.enabled` to switch the source off entirely
+
+### Changed
+
+- Migrated existing configurations to schema 9, which adds Cursor to the icon rather than leaving a new source collected but invisible
+
+### Fixed
+
+- Fixed a low-limit warning being sent again for the window it had already covered. Its deduplication key carried the reset time, which the providers do not report identically between readings — Claude's usage cache gives RFC 3339 seconds where `/usage` gives whole minutes — so every manual refresh, and every cache expiry, looked like a fresh window and repeated the warning. The key is now the source and window alone, with the window recorded beside it and a tolerance for readings that disagree by seconds. Upgrading resets that record, so each watched limit may warn once more than it otherwise would
+- Fixed two notifications being sent for one limit when it reached the icon twice, since nothing is recorded until each event is delivered
+
+### Notes
+
+- Cursor appears only once you are signed in, judged by a stored credential or by the `authId` marker in `~/.cursor/cli-config.json`, which holds no secret. The macOS keychain check asks only whether the item exists, so a machine that does not use Cursor makes no request and sees no permission prompt
+- Cursor's percentage is the API's own `totalPercentUsed`, and is never rebuilt from `includedSpend` and `limit`: those are a different scale, and a live account reading 2.9% carried an amount ratio of 50%
+- The Cursor CLI's official command is `agent`; `cursor-agent` is an alias for the same binary
+
+## 0.6.0 — 2026-08-09
+
+### Added
+
+- Added a settings screen served to the browser from a guarded loopback origin, covering the display, refresh, notification, history, update, colour and account settings, so the usual ones no longer need the config file
+- Added usage charts — headroom over time, token usage, and a weekday-by-hour heatmap — drawn from history recorded locally and pruned automatically
+- Added an optional check for new releases on GitHub, off by default, which sends nothing about the user
+- Added warnings when a watched limit runs low, at 50% and again at 20% of remaining headroom. Only the limits the icon is already drawing are watched, because choosing what the icon shows is how the user says which limits they care about
+- Added independently named profiles for Claude Code and Codex: a `label` for menus, charts and notifications, and a `short` the icon draws in place of the `CL`/`CX` prefix, so accounts stop being identified by a hash of a directory
+- Added the mascot to the settings page, wearing the expression the tightest limit deserves
+
+### Changed
+
+- Reported only what the service says about Claude Code limits. The estimate built from transcript tokens against a hand-calibrated ceiling is gone: it disagreed with the real figures badly enough to be worse than saying nothing, so an unreported window now shows `?`. Transcripts are still read, but only for the token tallies
+- Refreshed usage after the machine wakes. Figures from before the lid closed are certainly wrong at exactly the moment somebody looks at them, and a timer that was itself suspended cannot report that it was — but the wall clock says so plainly
+- Applied a setting without reloading the settings page, so changing one checkbox no longer redraws every chart and throws away the scroll position. A browser that will not run the script gets the forms exactly as they were
+- Drew one icon cell per account on macOS. A Windows tray icon is sixteen dots square, so it draws the three most constrained and stops; that is a property of the space, not of the implementation
+- Migrated Codex's list of home directories into named profiles on load
 
 ## 0.5.2 — 2026-08-04
 
