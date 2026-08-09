@@ -22,11 +22,17 @@ type Event struct {
 	Title, Body string
 	key         string
 	thresholds  []int
+	// windowResetsAt is the accounting window a limit warning belongs to. It is
+	// zero for banked-reset events, which are keyed on the credit instead.
+	windowResetsAt time.Time
 }
 
 type stateEntry struct {
 	Thresholds []int `json:"thresholdHours"`
 	LastSeen   int64 `json:"lastSeen"`
+	// WindowResetsAt records which window a limit warning was sent for, so the
+	// next window can warn again. It is not part of the key: see limitKey.
+	WindowResetsAt int64 `json:"windowResetsAt,omitempty"`
 }
 
 type stateFile struct {
@@ -164,6 +170,9 @@ func (e *Engine) Mark(event Event, now time.Time) error {
 		}
 	}
 	sort.Sort(sort.Reverse(sort.IntSlice(entry.Thresholds)))
+	if !event.windowResetsAt.IsZero() {
+		entry.WindowResetsAt = event.windowResetsAt.Unix()
+	}
 	entry.LastSeen = now.Unix()
 	e.state.Sent[event.key] = entry
 	for key, old := range e.state.Sent {

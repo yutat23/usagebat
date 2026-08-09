@@ -62,8 +62,53 @@ func TestLimitWarningFiresOncePerThreshold(t *testing.T) {
 	}
 }
 
-// A 5h window resets several times a day. Without the reset time in the key it
-// would warn once and then stay silent for good.
+// The same window is read from more than one place, and they do not agree on
+// the reset to the second: Claude's usage cache carries RFC 3339 seconds while
+// `/usage` prints whole minutes. Switching between them — which happens every
+// time the cache goes stale, and on every manual refresh — must not look like a
+// new window, or the user gets the same warning again every fifteen minutes.
+func TestSwitchingDataSourceDoesNotResendTheWarning(t *testing.T) {
+	e := newAt(filepath.Join(t.TempDir(), "state.json"))
+	p := i18n.New("en")
+	now := time.Now()
+
+	fromCache := now.Add(2 * time.Hour).Truncate(time.Second).Add(59 * time.Second)
+	events := e.DueLimits([]Gauge{gauge(49, fromCache)}, limitSettings(50, 20), p, now)
+	if len(events) != 1 {
+		t.Fatalf("got %d events, want the first warning", len(events))
+	}
+	if err := e.Mark(events[0], now); err != nil {
+		t.Fatal(err)
+	}
+
+	// The same window, now read from `/usage`, which rounds down to the minute.
+	fromCommand := fromCache.Truncate(time.Minute)
+	if got := e.DueLimits([]Gauge{gauge(47, fromCommand)}, limitSettings(50, 20), p, now.Add(15*time.Minute)); len(got) != 0 {
+		t.Fatalf("the same window warned again after a source switch: %+v", got)
+	}
+	// And back again, which is what the next cache refresh looks like.
+	if got := e.DueLimits([]Gauge{gauge(46, fromCache)}, limitSettings(50, 20), p, now.Add(30*time.Minute)); len(got) != 0 {
+		t.Fatalf("switching back warned again: %+v", got)
+	}
+}
+
+// Two cells can name the same limit — a service drawn both as a family and as
+// an account. Nothing is recorded until an event is delivered, so a duplicate
+// in one batch is a second notification.
+func TestOneBatchSendsOneWarningPerLimit(t *testing.T) {
+	e := newAt(filepath.Join(t.TempDir(), "state.json"))
+	now := time.Now()
+	resets := now.Add(time.Hour)
+
+	got := e.DueLimits([]Gauge{gauge(15, resets), gauge(15, resets)},
+		limitSettings(50, 20), i18n.New("en"), now)
+	if len(got) != 1 {
+		t.Fatalf("got %d events for one limit, want 1", len(got))
+	}
+}
+
+// A 5h window resets several times a day, and the next one deserves its own
+// warning.
 func TestLimitWarningRearmsAfterAReset(t *testing.T) {
 	e := newAt(filepath.Join(t.TempDir(), "state.json"))
 	p := i18n.New("en")
