@@ -138,6 +138,176 @@
       }
     }
     bindTabs();
+    bindCharts();
+  }
+
+  function visibleSvg(figure) {
+    var svgs = figure.querySelectorAll("svg");
+    for (var i = 0; i < svgs.length; i++) {
+      if (svgs[i].getClientRects().length) return svgs[i];
+    }
+    return null;
+  }
+
+  function svgScale(svg) {
+    var rect = svg.getBoundingClientRect();
+    var vb = svg.viewBox.baseVal;
+    var scale = Math.min(rect.width / vb.width, rect.height / vb.height);
+    return {
+      scale: scale,
+      ox: (rect.width - vb.width * scale) / 2,
+      oy: (rect.height - vb.height * scale) / 2,
+      rect: rect,
+    };
+  }
+
+  function toViewBox(svg, clientX, clientY) {
+    var s = svgScale(svg);
+    return {
+      x: (clientX - s.rect.left - s.ox) / s.scale,
+      y: (clientY - s.rect.top - s.oy) / s.scale,
+    };
+  }
+
+  function toPage(svg, figure, x, y) {
+    var s = svgScale(svg);
+    var fig = figure.getBoundingClientRect();
+    return {
+      x: s.rect.left - fig.left + s.ox + x * s.scale,
+      y: s.rect.top - fig.top + s.oy + y * s.scale,
+      scale: s.scale,
+    };
+  }
+
+  function nearestPoint(pts, x) {
+    var lo = 0, hi = pts.length - 1;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      if (pts[mid].x < x) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo > 0 && Math.abs(pts[lo - 1].x - x) < Math.abs(pts[lo].x - x)) return pts[lo - 1];
+    return pts[lo];
+  }
+
+  function hoverData(figure) {
+    if (figure._hover !== undefined) return figure._hover;
+    var raw = figure.getAttribute("data-hover");
+    if (!raw) {
+      figure._hover = null;
+      return null;
+    }
+    try {
+      figure._hover = JSON.parse(raw);
+    } catch (e) {
+      figure._hover = null;
+    }
+    return figure._hover;
+  }
+
+  function bindCharts() {
+    var tip = document.getElementById("chart-tip");
+    if (!tip) {
+      tip = document.createElement("div");
+      tip.id = "chart-tip";
+      document.body.appendChild(tip);
+    }
+    tip.hidden = true;
+    var figures = document.querySelectorAll("figure.chart[data-hover]");
+    for (var i = 0; i < figures.length; i++) {
+      bindChart(figures[i], tip);
+    }
+  }
+
+  function bindChart(figure, tip) {
+    var cross = figure.querySelector(".chart-cross");
+    if (!cross) {
+      cross = document.createElement("div");
+      cross.className = "chart-cross";
+      figure.appendChild(cross);
+    }
+    var dot = figure.querySelector(".chart-dot");
+    if (!dot) {
+      dot = document.createElement("div");
+      dot.className = "chart-dot";
+      figure.appendChild(dot);
+    }
+    var cell = figure.querySelector(".chart-cell");
+    if (!cell) {
+      cell = document.createElement("div");
+      cell.className = "chart-cell";
+      figure.appendChild(cell);
+    }
+
+    function hide() {
+      tip.hidden = true;
+      cross.style.display = "none";
+      dot.style.display = "none";
+      cell.style.display = "none";
+    }
+
+    figure.addEventListener("pointermove", function (event) {
+      var data = hoverData(figure);
+      var svg = visibleSvg(figure);
+      if (!data || !data.pts || !data.pts.length || !svg) {
+        hide();
+        return;
+      }
+      var at = toViewBox(svg, event.clientX, event.clientY);
+      var plot = data.p;
+      if (at.x < plot[0] || at.x > plot[0] + plot[2] || at.y < plot[1] || at.y > plot[1] + plot[3]) {
+        hide();
+        return;
+      }
+      var pt;
+      if (data.k === "heat") {
+        var pitch = data.c || 11;
+        var col = Math.floor((at.x - plot[0]) / pitch);
+        var row = Math.floor((at.y - plot[1]) / pitch);
+        if (col < 0 || col > 23 || row < 0 || row > 6) {
+          hide();
+          return;
+        }
+        pt = data.pts[row * 24 + col];
+      } else {
+        pt = nearestPoint(data.pts, at.x);
+      }
+      if (!pt) {
+        hide();
+        return;
+      }
+      tip.hidden = false;
+      tip.textContent = pt.l;
+      var left = event.clientX + 12;
+      var top = event.clientY + 16;
+      if (left + tip.offsetWidth > window.innerWidth - 8) left = event.clientX - tip.offsetWidth - 12;
+      if (top + tip.offsetHeight > window.innerHeight - 8) top = event.clientY - tip.offsetHeight - 12;
+      tip.style.left = left + "px";
+      tip.style.top = top + "px";
+
+      var pos = toPage(svg, figure, pt.x, pt.y);
+      var topLeft = toPage(svg, figure, plot[0], plot[1]);
+      var bottom = toPage(svg, figure, plot[0], plot[1] + plot[3]);
+      if (data.k === "heat") {
+        cross.style.display = "none";
+        dot.style.display = "none";
+        cell.style.display = "block";
+        cell.style.left = pos.x + "px";
+        cell.style.top = pos.y + "px";
+        cell.style.width = ((data.c || 11) - (data.g || 0)) * pos.scale + "px";
+        cell.style.height = ((data.c || 11) - (data.g || 0)) * pos.scale + "px";
+      } else {
+        cell.style.display = "none";
+        cross.style.display = "block";
+        cross.style.left = pos.x + "px";
+        cross.style.top = topLeft.y + "px";
+        cross.style.height = (bottom.y - topLeft.y) + "px";
+        dot.style.display = "block";
+        dot.style.left = pos.x + "px";
+        dot.style.top = pos.y + "px";
+      }
+    });
+    figure.addEventListener("pointerleave", hide);
   }
 
   bind();

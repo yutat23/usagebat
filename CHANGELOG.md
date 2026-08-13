@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.2 — 2026-08-13
+
+### Added
+
+- Charts now name the point under the cursor: the date, time, and reading, so a dip in the line can be read without guessing at the axis
+- Labelled the activity heatmap as percentage points of the limit used in that hour, with a 0%–peak% colour ramp, so the cells are not a unitless scale
+
+### Fixed
+
+- Fixed the settings-page mascot vanishing in dark mode: its casing is the same near-black as the page, so the dark theme now gets the cream outline the Windows toast already uses
+
+### Changed
+
+- Showed a format example in every settings text field, so clearing a comma-separated list or a path does not leave the reader without the shape of a valid value
+- Moved the icon pickers — which services and periods to draw, the icon style, and the UI language — out of the tray menu and onto the settings page, so the menu stays a reading of remaining quota rather than a second copy of those checkboxes
+
 ## 0.6.1 — 2026-08-09
 
 ### Added

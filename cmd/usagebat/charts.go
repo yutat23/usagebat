@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
 	"log"
 	"strings"
@@ -27,7 +28,16 @@ const (
 // mascot is stable brand artwork. Live usage belongs in batteries, numbers and
 // charts; the character never rewards or judges how much somebody used.
 func mascot(p i18n.Printer) template.HTML {
-	return template.HTML(render.Mascot(p.T("settingsTitle")).SVG)
+	label := p.T("settingsTitle")
+	var markup strings.Builder
+	for _, dark := range []bool{false, true} {
+		class := "only-light"
+		if dark {
+			class = "only-dark"
+		}
+		markup.WriteString(`<span class="` + class + `">` + render.Mascot(label, dark).SVG + `</span>`)
+	}
+	return template.HTML(markup.String())
 }
 
 // chartSections builds the usage charts from recorded history.
@@ -59,12 +69,13 @@ func (a *app) chartSections(cfg *config.Config, snap *model.Snapshot, p i18n.Pri
 	remaining := webui.Section{Title: heading}
 	var tokens, activity webui.Section
 	tokens.Title = p.T("chartTokens")
-	activity.Title = p.T("chartActivity")
+	activity.Title = p.T("chartActivity") + " — " + p.T("chartActivityUnit")
 
 	for _, series := range chartSeries(cfg, snap, samples) {
 		label := seriesLabel(series, snap, p)
 		if points := history.Remaining(samples, series); len(points) > 1 {
 			remaining.Rows = append(remaining.Rows, chartRow(label, func(o render.ChartOptions) render.Chart {
+				o.FormatHover = p.ChartRemainingHover
 				return render.RemainingChart(points, o)
 			}, cfg, p, label))
 		}
@@ -72,12 +83,19 @@ func (a *app) chartSections(cfg *config.Config, snap *model.Snapshot, p i18n.Pri
 		// saying so, which takes as much room as a real chart and says less.
 		if points := history.TokenUsage(samples, series); consumed(points) {
 			tokens.Rows = append(tokens.Rows, chartRow(label, func(o render.ChartOptions) render.Chart {
+				o.FormatHover = func(at time.Time, v float64) string {
+					return p.ChartTokensHover(at, render.FormatCount(v))
+				}
 				return render.UsageChart(points, o)
 			}, cfg, p, label))
 		}
 		if heat := history.Activity(samples, series, time.Local); heat.Max() > 0 {
 			activity.Rows = append(activity.Rows, chartRow(label, func(o render.ChartOptions) render.Chart {
 				o.Width, o.Height = 0, 0 // the heatmap sizes itself
+				days := p.Weekdays()
+				o.FormatHeat = func(day, hour int, v float64) string {
+					return p.ChartHeatHover(days[day], hour, v)
+				}
 				return render.ActivityChart(heat, o)
 			}, cfg, p, label))
 		}
@@ -116,6 +134,7 @@ func chartRow(caption string, draw func(render.ChartOptions) render.Chart,
 	cfg *config.Config, p i18n.Printer, label string) webui.Row {
 
 	var markup strings.Builder
+	var hover render.Hover
 	for _, dark := range []bool{false, true} {
 		class := "only-light"
 		if dark {
@@ -130,14 +149,24 @@ func chartRow(caption string, draw func(render.ChartOptions) render.Chart,
 			Weekdays: p.Weekdays(),
 			Empty:    p.T("chartNoData"),
 		})
+		if len(hover.Pts) == 0 {
+			hover = chart.Hover
+		}
 		markup.WriteString(`<span class="` + class + `">` + chart.SVG + `</span>`)
+	}
+	payload := ""
+	if len(hover.Pts) > 0 {
+		if raw, err := json.Marshal(hover); err == nil {
+			payload = string(raw)
+		}
 	}
 	return webui.Row{
 		Label: caption,
 		Kind:  webui.KindChart,
 		// The markup is built here from rendered charts; nothing in it comes
 		// from anywhere a user could reach.
-		SVG: template.HTML(markup.String()),
+		SVG:   template.HTML(markup.String()),
+		Hover: payload,
 	}
 }
 

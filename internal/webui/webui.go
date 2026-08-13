@@ -69,6 +69,10 @@ type Row struct {
 	// SVG is the chart markup for a KindChart row. It is inlined rather than
 	// escaped, so it must come from the renderer and never from user input.
 	SVG template.HTML
+	// Hover is JSON naming the point under the cursor. Empty means the chart
+	// has nothing to read out. It is written into an HTML attribute, not as
+	// markup, so quotes in a label cannot break the page.
+	Hover string
 	// Value and the remaining fields describe editable form controls.
 	Value       string
 	InputType   string

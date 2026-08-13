@@ -375,7 +375,7 @@ func (a *app) deliver(events []notifyengine.Event, now time.Time) {
 }
 
 // services are the provider families, in the order they are offered wherever
-// the user picks between them: the menu, the settings page and the icon.
+// the user picks between them: the settings page and the icon.
 var services = []struct{ ID, Name string }{
 	{model.SourceClaudeCode, "Claude Code"},
 	{model.SourceCodex, "Codex"},
@@ -735,8 +735,8 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time, p i18n.P
 		if src.Err != "" {
 			items = append(items, tray.Item{Title: "⚠ " + src.Err, Disabled: true, Indent: 1})
 		}
-		// The detail menu shows every limit the provider actually has. The
-		// window checkboxes below control only what is drawn in the icon.
+		// The detail menu shows every limit the provider actually has. Which
+		// of those the icon draws is chosen on the settings page.
 		for _, w := range model.AllWindows {
 			st, ok := src.Windows[w]
 			if !ok {
@@ -761,79 +761,10 @@ func buildMenu(cfg *config.Config, snap *model.Snapshot, now time.Time, p i18n.P
 		items = append(items, tray.Item{Separator: true})
 	}
 
-	items = append(items, tray.Item{Title: p.T("iconStyle"), Disabled: true})
-	mode := cfg.Mode()
-	for _, m := range []config.DisplayMode{config.ModeBoth, config.ModeBattery, config.ModePercent} {
-		items = append(items, tray.Item{
-			ID:        idModePfx + string(m),
-			Title:     modeTitle(m, p),
-			Indent:    1,
-			Checkable: true,
-			Checked:   mode == m,
-		})
-	}
-
-	items = append(items, tray.Item{Title: p.T("servicesShown"), Disabled: true})
-	selectedSources := map[string]bool{}
-	for _, id := range cfg.EnabledDisplaySources() {
-		selectedSources[id] = true
-	}
-	for _, source := range services {
-		if !snapshotHasFamily(snap, source.ID) {
-			continue
-		}
-		items = append(items, tray.Item{
-			ID:        idSourcePfx + source.ID,
-			Title:     source.Name,
-			Indent:    1,
-			Checkable: true,
-			Checked:   selectedSources[source.ID],
-		})
-	}
-
-	for _, source := range services {
-		if !snapshotHasFamily(snap, source.ID) {
-			continue
-		}
-		items = append(items, tray.Item{Title: limitsTitle(source.ID, p), Disabled: true})
-		auto, windows := cfg.LimitSelection(source.ID)
-		items = append(items, tray.Item{
-			ID:        idLimitPfx + source.ID + ":auto",
-			Title:     p.T("shortest"),
-			Indent:    1,
-			Checkable: true,
-			Checked:   auto,
-		})
-		enabled := map[model.Window]bool{}
-		for _, w := range windows {
-			enabled[w] = true
-		}
-		for _, w := range model.AllWindows {
-			items = append(items, tray.Item{
-				ID:        idLimitPfx + source.ID + ":" + string(w),
-				Title:     p.WindowTitle(w),
-				Indent:    1,
-				Checkable: true,
-				Checked:   !auto && enabled[w],
-			})
-		}
-	}
-
 	if snapshotHasFamily(snap, model.SourceCodex) {
 		ns := cfg.BankedResetNotifications()
 		items = append(items, tray.Item{
 			ID: idNotifications, Title: p.T("notifications"), Checkable: true, Checked: ns.Enabled,
-		})
-	}
-
-	items = append(items, tray.Item{Title: p.T("language"), Disabled: true})
-	language := cfg.LanguageSetting()
-	for _, choice := range []struct{ id, title string }{
-		{i18n.Auto, p.T("systemDefault")}, {i18n.EN, p.T("english")}, {i18n.JA, p.T("japanese")},
-	} {
-		items = append(items, tray.Item{
-			ID: idLanguagePfx + choice.id, Title: choice.title, Indent: 1,
-			Checkable: true, Checked: language == choice.id,
 		})
 	}
 

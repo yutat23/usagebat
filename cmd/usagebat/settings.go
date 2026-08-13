@@ -168,11 +168,12 @@ func (a *app) settingsPage() webui.Page {
 	p := i18n.New(cfg.LanguageSetting())
 	editable := cfg.EditableSettings()
 	save := p.T("save")
+	defaults := config.Default()
 	input := func(key, label, value, inputType, min, max, detail string) webui.Row {
 		return webui.Row{
 			ID: "setting:" + key, Label: label, Value: value, Kind: webui.KindInput,
 			InputType: inputType, Min: min, Max: max, Step: "1", Detail: detail,
-			SubmitLabel: save,
+			Placeholder: inputPlaceholder(key, defaults, p), SubmitLabel: save,
 		}
 	}
 	selectRow := func(key, label, value string, options []webui.Option) webui.Row {
@@ -410,6 +411,37 @@ func (a *app) settingsPage() webui.Page {
 	add(generalID, generalTitle, other)
 
 	return page
+}
+
+// inputPlaceholder is the format hint shown once the field is empty. It uses
+// the shipped defaults so the example cannot drift from a valid value.
+func inputPlaceholder(key string, defaults *config.Config, p i18n.Printer) string {
+	switch {
+	case key == "refreshSeconds":
+		return strconv.Itoa(defaults.RefreshSeconds)
+	case key == "notifications.bankedResetExpiry.thresholdHours":
+		return joinInts(defaults.Notifications.BankedResetExpiry.ThresholdHours)
+	case key == "notifications.limitThresholds.percents":
+		return joinInts(defaults.Notifications.LimitThresholds.Percents)
+	case key == "history.intervalMinutes":
+		return strconv.Itoa(defaults.History.IntervalMinutes)
+	case key == "history.retentionDays":
+		return strconv.Itoa(defaults.History.RetentionDays)
+	case key == "updateCheck.intervalHours":
+		return strconv.Itoa(defaults.UpdateCheck.IntervalHours)
+	case key == "colors.warnBelow":
+		return strconv.FormatFloat(defaults.Colors.WarnBelow, 'f', -1, 64)
+	case key == "colors.criticalBelow":
+		return strconv.FormatFloat(defaults.Colors.CriticalBelow, 'f', -1, 64)
+	case strings.HasSuffix(key, ".path"):
+		return "auto"
+	case strings.HasSuffix(key, ".label"):
+		return p.T("profileLabelPlaceholder")
+	case strings.HasSuffix(key, ".short"):
+		return p.T("profileShortPlaceholder")
+	default:
+		return ""
+	}
 }
 
 func joinInts(values []int) string {

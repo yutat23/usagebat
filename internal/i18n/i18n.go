@@ -54,6 +54,7 @@ var messages = map[string][2]string{
 	"chartRemaining":          {"Headroom over time", "残量の推移"},
 	"chartTokens":             {"Token usage", "トークン消費量"},
 	"chartActivity":           {"When you use it", "時間帯別の使用傾向"},
+	"chartActivityUnit":       {"% of the limit used that hour", "その時間に減った残量%"},
 	"chartsPending":           {"Charts appear once usagebat has collected a few hours of history.", "数時間ぶん記録するとグラフが表示されます。"},
 	"recordHistory":           {"Record usage history on this machine", "使用履歴をこの端末に記録する"},
 	"historyDetail":           {"Kept locally and pruned automatically; nothing is uploaded.", "ローカルにのみ保存し、古いものは自動削除します。外部送信はありません。"},
@@ -104,8 +105,10 @@ var messages = map[string][2]string{
 	"claudeProfilePathDetail": {"“auto” uses CLAUDE_CONFIG_DIR or ~/.claude", "「auto」はCLAUDE_CONFIG_DIRまたは~/.claudeを使用"},
 	"profileLabel":            {"Display name", "表示名"},
 	"profileLabelDetail":      {"Optional name shown in menus and charts", "メニューとグラフに表示する任意の名前"},
+	"profileLabelPlaceholder": {"Work", "仕事"},
 	"profileShort":            {"Icon abbreviation", "アイコンの略称"},
 	"profileShortDetail":      {"Optional, up to two characters", "任意、2文字まで"},
+	"profileShortPlaceholder": {"CW", "CW"},
 	"addAccount":              {"Add account", "アカウントを追加"},
 	"removeAccount":           {"Remove this account", "このアカウントを削除"},
 	"moveAccountUp":           {"↑ Move earlier", "↑ 前に移動"},
@@ -285,6 +288,46 @@ func (p Printer) Weekdays() [7]string {
 		return [7]string{"日", "月", "火", "水", "木", "金", "土"}
 	}
 	return [7]string{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"}
+}
+
+// ChartWhen is the timestamp on a chart readout, matching the axis labels.
+func (p Printer) ChartWhen(t time.Time) string {
+	return t.Format("1/2 15:04")
+}
+
+// ChartRemainingHover is the pointer readout on the headroom chart.
+func (p Printer) ChartRemainingHover(t time.Time, remaining float64) string {
+	if p.Japanese() {
+		return fmt.Sprintf("%s · 残り%.0f%%", p.ChartWhen(t), remaining)
+	}
+	return fmt.Sprintf("%s · %.0f%% left", p.ChartWhen(t), remaining)
+}
+
+// ChartTokensHover is the pointer readout on the token-usage chart.
+func (p Printer) ChartTokensHover(t time.Time, tokens string) string {
+	return p.ChartWhen(t) + " · " + tokens
+}
+
+// ChartHeatHover is the pointer readout on one heatmap cell. The value is
+// percentage points of the limit consumed in that hour, so the unit is always %.
+func (p Printer) ChartHeatHover(weekday string, hour int, value float64) string {
+	if p.Japanese() {
+		if value <= 0 {
+			return fmt.Sprintf("%s %d時 · なし", weekday, hour)
+		}
+		return fmt.Sprintf("%s %d時 · %s消費", weekday, hour, heatPercent(value))
+	}
+	if value <= 0 {
+		return fmt.Sprintf("%s %02d:00 · none", weekday, hour)
+	}
+	return fmt.Sprintf("%s %02d:00 · %s used", weekday, hour, heatPercent(value))
+}
+
+func heatPercent(v float64) string {
+	if v > 0 && v < 1 {
+		return fmt.Sprintf("%.1f%%", v)
+	}
+	return fmt.Sprintf("%.0f%%", v)
 }
 
 // UpdateAvailable labels the row that opens a newer release.

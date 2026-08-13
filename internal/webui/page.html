@@ -229,6 +229,10 @@ h2 {
   color: var(--fg);
   font: inherit;
 }
+.setting-form input::placeholder {
+  color: var(--dim);
+  opacity: 1;
+}
 .setting-form input[type="color"] { height: 1.9rem; padding: .18rem; }
 .setting-form input:focus-visible, .setting-form select:focus-visible {
   outline: 2px solid var(--accent);
@@ -271,6 +275,7 @@ figure.chart {
   margin: 0;
   padding: .7rem .8rem .8rem;
   border-top: 1px solid var(--line);
+  position: relative;
 }
 figure.chart:first-child { border-top: none; }
 figure.chart figcaption {
@@ -281,6 +286,43 @@ figure.chart figcaption {
 /* The charts are dot art; the SVG itself carries shape-rendering="crispEdges",
    which is what keeps the dots square as the page scales them. */
 figure.chart svg { display: block; width: 100%; height: auto; }
+figure.chart[data-hover] svg { cursor: crosshair; }
+.chart-cross, .chart-dot, .chart-cell {
+  position: absolute;
+  pointer-events: none;
+  display: none;
+}
+.chart-cross {
+  border-left: 1px solid var(--accent);
+  opacity: .4;
+}
+.chart-dot {
+  width: 7px;
+  height: 7px;
+  margin: -3.5px 0 0 -3.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--raised);
+}
+.chart-cell {
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  box-sizing: border-box;
+}
+#chart-tip {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  background: var(--raised);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: .2rem .5rem;
+  font-size: .78rem;
+  line-height: 1.4;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .12);
+  white-space: nowrap;
+}
 /* Charts are drawn on the server, which cannot know the browser's theme, so
    both are sent and the media query keeps the one that fits. */
 .only-dark { display: none; }
@@ -367,7 +409,7 @@ body.busy { cursor: progress; }
         </form>
         {{if .Detail}}<div class="note">{{.Detail}}</div>{{end}}
       {{else if eq .Kind 4}}
-        <figure class="chart">
+        <figure class="chart"{{if .Hover}} data-hover="{{.Hover}}"{{end}}>
           {{if .Label}}<figcaption>{{.Label}}</figcaption>{{end}}
           {{.SVG}}
         </figure>

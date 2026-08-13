@@ -56,13 +56,43 @@ func TestDisplayCellsOmitUnavailableService(t *testing.T) {
 	}
 	menu := buildMenu(cfg, snap, time.Now(), i18n.New("en"))
 	for _, item := range menu {
-		if item.Title == "Claude Code" || item.Title == "Claude Code limits" {
+		if item.Title == "Claude Code" {
 			t.Fatalf("unavailable Claude should not be offered in menu: %+v", item)
 		}
 	}
 }
 
-func TestJapaneseMenuIncludesBankedResetAndLanguage(t *testing.T) {
+// Service, period, icon-style and language pickers used to live in the tray.
+// Three sources made the menu longer than the usage it was meant to show.
+// Those choices belong on the settings page.
+func TestMenuOmitsDisplayPickers(t *testing.T) {
+	cfg := config.Default()
+	snap := &model.Snapshot{Sources: []model.SourceStatus{
+		{ID: model.SourceClaudeCode, Name: "Claude Code", Windows: map[model.Window]model.WindowStatus{
+			model.Window5h: {Known: true},
+		}},
+		{ID: model.SourceCodex, Name: "Codex", Windows: map[model.Window]model.WindowStatus{
+			model.WindowWeekly: {Known: true},
+		}},
+		{ID: model.SourceCursor, Name: "Cursor", Windows: map[model.Window]model.WindowStatus{
+			model.WindowMonthly: {Known: true},
+		}},
+	}}
+	menu := buildMenu(cfg, snap, time.Now(), i18n.New("en"))
+	for _, item := range menu {
+		if strings.HasPrefix(item.ID, idLimitPfx) || strings.HasPrefix(item.ID, idSourcePfx) ||
+			strings.HasPrefix(item.ID, idModePfx) || strings.HasPrefix(item.ID, idLanguagePfx) {
+			t.Errorf("tray menu still offers settings picker %q", item.ID)
+		}
+		switch item.Title {
+		case "Services shown in icon", "Claude Code limits", "Codex limits", "Cursor limits",
+			"Icon style", "Language / 言語":
+			t.Errorf("tray menu still offers %q", item.Title)
+		}
+	}
+}
+
+func TestJapaneseMenuIncludesBankedReset(t *testing.T) {
 	now := time.Date(2026, 8, 2, 12, 0, 0, 0, time.Local)
 	cfg := config.Default()
 	cfg.Language = "ja"
@@ -73,7 +103,7 @@ func TestJapaneseMenuIncludesBankedResetAndLanguage(t *testing.T) {
 		}}},
 	}}}
 	menu := buildMenu(cfg, snap, now, i18n.New("ja"))
-	wants := []string{"Banked reset  1回利用可能 · あと10日に期限切れ", "banked resetの期限切れ通知", "今すぐ更新", "日本語"}
+	wants := []string{"Banked reset  1回利用可能 · あと10日に期限切れ", "banked resetの期限切れ通知", "今すぐ更新"}
 	for _, want := range wants {
 		found := false
 		for _, item := range menu {

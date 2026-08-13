@@ -47,11 +47,23 @@ func previewChart() template.HTML {
 	return template.HTML(markup.String())
 }
 
+func previewMascot() template.HTML {
+	var markup strings.Builder
+	for _, dark := range []bool{false, true} {
+		class := "only-light"
+		if dark {
+			class = "only-dark"
+		}
+		markup.WriteString(`<span class="` + class + `">` + render.Mascot("usagebat", dark).SVG + `</span>`)
+	}
+	return template.HTML(markup.String())
+}
+
 // samplePage stands in for a machine with both services configured, so the
 // preview shows every kind of row the real screen can produce.
 func samplePage() Page {
 	return Page{
-		Mascot:         template.HTML(render.Mascot("usagebat").SVG),
+		Mascot:         previewMascot(),
 		Title:          "usagebat の設定",
 		Version:        "0.6.0",
 		OverviewLabel:  "概要",

@@ -42,9 +42,9 @@ Download the appropriate file from the latest GitHub release:
 
 | Platform | Release file |
 |---|---|
-| macOS, Apple Silicon or Intel | `usagebat_0.6.1_macOS_universal.zip` |
-| Windows on an Intel or AMD processor | `usagebat_0.6.1_windows_amd64.zip` |
-| Windows on ARM | `usagebat_0.6.1_windows_arm64.zip` |
+| macOS, Apple Silicon or Intel | `usagebat_0.6.2_macOS_universal.zip` |
+| Windows on an Intel or AMD processor | `usagebat_0.6.2_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.6.2_windows_arm64.zip` |
 
 Most Windows computers need the `amd64` build. Use `arm64` only for a Windows on ARM device.
 
@@ -60,7 +60,7 @@ At least one supported CLI must be installed and signed in:
 2. Move `usagebat.app` to `/Applications`.
 3. Open it. usagebat has no Dock icon; look for its battery in the menu bar.
 
-The v0.6.1 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
+The v0.6.2 build is not notarized. If macOS blocks the first launch, Control-click the app, choose **Open**, then confirm. Move the app before enabling automatic startup so the saved path stays valid.
 
 ### Windows
 
@@ -68,21 +68,17 @@ The v0.6.1 build is not notarized. If macOS blocks the first launch, Control-cli
 2. Run `usagebat.exe`.
 3. Look for its battery in the system tray. It may initially be inside the hidden-icons menu.
 
-The v0.6.1 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
+The v0.6.2 executable is not code-signed, so Microsoft Defender SmartScreen may show a warning. Choose **More info** and **Run anyway** only if you downloaded it from this repository's release page.
 
 ## Using the tray menu
 
 Click the menu-bar item on macOS, or right-click the tray icon on Windows. The menu lets you:
 
 - inspect every reported limit and its reset time;
-- choose the icon style;
-- include any combination of Claude Code, Codex, and Cursor;
-- choose a different period for each service;
 - refresh immediately;
-- open the configuration file;
+- open **Settings…** to choose the icon style, language, and which services and periods the icon draws;
 - enable **Launch at startup**;
 - enable banked-reset expiration notifications; and
-- switch between system-default, English, and Japanese UI text; and
 - see the running version and open the project on GitHub.
 
 By default, usagebat selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CUMO` is Cursor's billing-cycle limit.
@@ -308,7 +304,7 @@ Go 1.25 or newer is required.
 You can install the command directly from the tagged source:
 
 ```sh
-go install github.com/yutat23/usagebat/cmd/usagebat@v0.6.1
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.6.2
 ```
 
 The binary is normally written to `~/go/bin` on macOS or `%USERPROFILE%\go\bin` on Windows. This route is intended for developers:

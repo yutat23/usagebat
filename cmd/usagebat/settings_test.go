@@ -74,6 +74,13 @@ func TestPageDrawsChartsFromHistory(t *testing.T) {
 	}
 }
 
+func TestMascotIsDrawnForBothThemes(t *testing.T) {
+	html := string(recordedApp(t).settingsPage().Mascot)
+	if !strings.Contains(html, "only-light") || !strings.Contains(html, "only-dark") {
+		t.Fatal("mascot was not drawn for both themes")
+	}
+}
+
 // Turning recording off has to stop the charts as well, or the screen keeps
 // showing data the user asked it to stop collecting.
 func TestPageWithoutHistoryExplainsItself(t *testing.T) {
@@ -212,6 +219,68 @@ func allRows(page webui.Page) []webui.Row {
 		out = append(out, section.Rows...)
 	}
 	return out
+}
+
+func TestChartRowsCarryHoverReadout(t *testing.T) {
+	found := false
+	for _, row := range allRows(recordedApp(t).settingsPage()) {
+		if row.Kind != webui.KindChart {
+			continue
+		}
+		if !strings.Contains(row.Hover, `"k":"line"`) && !strings.Contains(row.Hover, `"k":"heat"`) {
+			t.Errorf("chart %q has no hover readout: %q", row.Label, row.Hover)
+			continue
+		}
+		found = true
+	}
+	if !found {
+		t.Fatal("no charts on the page")
+	}
+}
+
+func TestInputRowsHavePlaceholders(t *testing.T) {
+	got := map[string]string{}
+	for _, row := range allRows(recordedApp(t).settingsPage()) {
+		if row.Kind != webui.KindInput {
+			continue
+		}
+		got[row.ID] = row.Placeholder
+		if row.InputType == "color" {
+			continue
+		}
+		if row.Placeholder == "" {
+			t.Errorf("%s has no format placeholder", row.ID)
+		}
+	}
+	wants := map[string]string{
+		"setting:notifications.bankedResetExpiry.thresholdHours": "168, 24",
+		"setting:notifications.limitThresholds.percents":         "50, 20",
+		"setting:history.intervalMinutes":                        "5",
+		"setting:claude.profiles.0.path":                         "auto",
+	}
+	for id, want := range wants {
+		if got[id] != want {
+			t.Errorf("%s placeholder = %q, want %q", id, got[id], want)
+		}
+	}
+}
+
+func TestSettingsPageKeepsDisplayPickers(t *testing.T) {
+	ids := map[string]bool{}
+	for _, row := range allRows(recordedApp(t).settingsPage()) {
+		ids[row.ID] = true
+	}
+	for _, want := range []string{
+		idSourcePfx + model.SourceClaudeCode,
+		idLimitPfx + model.SourceClaudeCode + ":auto",
+		idLimitPfx + model.SourceClaudeCode + ":" + string(model.Window5h),
+		idModePfx + string(config.ModeBoth),
+		idLanguagePfx + "auto",
+	} {
+		if !ids[want] {
+			t.Errorf("settings page is missing %q", want)
+		}
+	}
 }
 
 // The screen is the only place these can be reached, so every row it offers

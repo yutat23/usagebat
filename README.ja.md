@@ -38,9 +38,9 @@ Windowsのトレイアイコンは正方形に固定されています。既定�
 
 | 環境 | ファイル |
 |---|---|
-| macOS（Apple Silicon / Intel） | `usagebat_0.6.1_macOS_universal.zip` |
-| Windows Intel / AMD | `usagebat_0.6.1_windows_amd64.zip` |
-| Windows on ARM | `usagebat_0.6.1_windows_arm64.zip` |
+| macOS（Apple Silicon / Intel） | `usagebat_0.6.2_macOS_universal.zip` |
+| Windows Intel / AMD | `usagebat_0.6.2_windows_amd64.zip` |
+| Windows on ARM | `usagebat_0.6.2_windows_arm64.zip` |
 
 Claude Code・Codex・Cursor CLI（`agent login`）のいずれかがインストールされ、ログイン済みである必要があります。
 
@@ -64,13 +64,13 @@ Claude Code・Codex・Cursor CLI（`agent login`）のいずれかがインス�
 
 macOSではメニューバー項目をクリック、Windowsではトレイアイコンを右クリックします。メニューから次を変更できます。
 
-- アイコンの表示形式
-- 表示するサービスと期間
-- banked reset期限通知のON/OFF
-- システム言語／英語／日本語
+- 各サービスの残量とリセット時刻の確認
+- 今すぐ更新
+- 「設定…」から、アイコンの表示形式、言語、アイコンに出すサービスと期間を選択
 - OS起動時の自動起動
-- 今すぐ更新、設定ファイルを開く、終了
+- banked reset期限通知のON/OFF
 - 実行中のバージョン確認とGitHubへのリンク
+- 終了
 
 既定では、各サービスが実際に報告する最短の制限を選択します。`CL5H`はClaude Codeの5時間枠、`CXWK`はCodexの週間枠、`CUMO`はCursorの請求サイクル枠です。
 
@@ -222,7 +222,7 @@ usagebatには分析サービスがなく、履歴や認証情報を外部へ送
 Go 1.25以降が必要です。
 
 ```sh
-go install github.com/yutat23/usagebat/cmd/usagebat@v0.6.1
+go install github.com/yutat23/usagebat/cmd/usagebat@v0.6.2
 ```
 
 通常のデスクトップ利用には、macOSの`.app`やWindows GUIサブシステム設定を含むRelease版を推奨します。

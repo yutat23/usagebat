@@ -19,7 +19,8 @@ func testServer(t *testing.T) (*Server, string, *http.Client) {
 			SettingsLabel: "Settings sections", SavedLabel: "Saved", SaveErrorLabel: "Could not save",
 			Sections: []Section{
 				{Title: "Headroom", Grid: true,
-					Rows: []Row{{Label: "Claude Code · 5h", Kind: KindChart}}},
+					Rows: []Row{{Label: "Claude Code · 5h", Kind: KindChart,
+						Hover: `{"k":"line","pts":[{"x":30,"y":20,"l":"8/3 00:00 · 100% left"}]}`}}},
 				{Title: "Icon", Aside: true, CategoryID: "general", CategoryTitle: "General", Rows: []Row{
 					{ID: "mode:both", Label: "Battery + %", Kind: KindRadio, Checked: true},
 					{ID: "history", Label: "Record history", Kind: KindToggle},
@@ -201,7 +202,7 @@ func TestPageSplitsChartsFromSettings(t *testing.T) {
 	for _, want := range []string{
 		`class="col main"`, `class="tabbar"`, `class="settings-grid"`, `class="rows grid"`,
 		`data-tab-panel="overview"`, `max-width: 72rem`,
-		`columns: 18rem`, `break-inside: avoid`,
+		`columns: 18rem`, `break-inside: avoid`, `data-hover="`,
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("page is missing %s", want)
@@ -230,7 +231,7 @@ func TestPageRendersEditableInputsAndSelects(t *testing.T) {
 	s := &Server{Render: func() Page {
 		return Page{Title: "usagebat", Sections: []Section{{Aside: true, Rows: []Row{
 			{ID: "setting:refreshSeconds", Label: "Refresh interval", Kind: KindInput,
-				InputType: "number", Value: "90", Min: "5", Max: "3600", SubmitLabel: "Save"},
+				InputType: "number", Value: "90", Min: "5", Max: "3600", Placeholder: "60", SubmitLabel: "Save"},
 			{ID: "setting:icon.windowsLayout", Label: "Windows layout", Kind: KindSelect,
 				Value: "single", SubmitLabel: "Save", Options: []Option{
 					{Value: "stack", Label: "Stack"}, {Value: "single", Label: "Single"},
@@ -241,7 +242,7 @@ func TestPageRendersEditableInputsAndSelects(t *testing.T) {
 	s.renderPage(recorder)
 	body := recorder.Body.String()
 	for _, want := range []string{
-		`name="value" type="number" value="90"`, `min="5"`, `max="3600"`,
+		`name="value" type="number" value="90"`, `min="5"`, `max="3600"`, `placeholder="60"`,
 		`<option value="single" selected>Single</option>`,
 	} {
 		if !strings.Contains(body, want) {
@@ -392,7 +393,7 @@ func TestScriptNeedsTheSession(t *testing.T) {
 
 	client.Get(raw)
 	body := get(t, client, "http://"+s.Addr()+"/app.js")
-	for _, want := range []string{"data-async", "data-tab-target", "reportValidity", "window.location.hash"} {
+	for _, want := range []string{"data-async", "data-tab-target", "reportValidity", "window.location.hash", "data-hover"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("served script is missing %q:\n%s", want, body)
 		}

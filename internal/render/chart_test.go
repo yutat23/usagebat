@@ -1,6 +1,7 @@
 package render
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"os"
@@ -141,6 +142,70 @@ func TestActivityChartDistinguishesUnusedHours(t *testing.T) {
 	}
 	if got := o.Palette.heatInk(0, 60, grid); got != grid {
 		t.Error("an unused hour must keep the grid colour")
+	}
+}
+
+func TestChartsCarryHoverReadout(t *testing.T) {
+	start := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
+	o := testChartOptions(false)
+	o.FormatHover = func(at time.Time, v float64) string {
+		return at.Format("1/2 15:04") + " · " + fmt.Sprintf("%.0f", v)
+	}
+	o.FormatHeat = func(day, hour int, v float64) string {
+		return fmt.Sprintf("%d %02d:00 · %.0f", day, hour, v)
+	}
+	points := sawtooth(start)
+
+	remaining := RemainingChart(points, o)
+	if remaining.Hover.Kind != "line" || len(remaining.Hover.Pts) == 0 {
+		t.Fatalf("remaining hover = %+v", remaining.Hover)
+	}
+	if !strings.Contains(remaining.Hover.Pts[0].Label, "8/3 00:00") {
+		t.Errorf("remaining first label = %q", remaining.Hover.Pts[0].Label)
+	}
+	if strings.Contains(remaining.SVG, remaining.Hover.Pts[0].Label) {
+		t.Error("the readout was inlined into the SVG; it belongs beside the picture")
+	}
+
+	usage := UsageChart(points, o)
+	if usage.Hover.Kind != "line" || len(usage.Hover.Pts) == 0 {
+		t.Fatalf("usage hover = %+v", usage.Hover)
+	}
+
+	var heat history.Heatmap
+	heat[time.Monday][9] = 30
+	activity := ActivityChart(heat, o)
+	if activity.Hover.Kind != "heat" || len(activity.Hover.Pts) != 7*24 {
+		t.Fatalf("activity hover pts = %d, kind = %q", len(activity.Hover.Pts), activity.Hover.Kind)
+	}
+	mon9 := activity.Hover.Pts[int(time.Monday)*24+9]
+	if !strings.Contains(mon9.Label, "09:00") || !strings.Contains(mon9.Label, "30") {
+		t.Errorf("Monday 9:00 label = %q", mon9.Label)
+	}
+	if !strings.Contains(activity.SVG, "0%") || !strings.Contains(activity.SVG, "30%") {
+		t.Errorf("heatmap has no percent legend:\n%s", activity.SVG)
+	}
+	// The 0% / peak% captions sit below the swatches. If Height does not
+	// clear their baseline, the viewBox clips the bottom of the glyphs.
+	if activity.Height < 134 {
+		t.Errorf("heatmap height = %v; the percent legend would be clipped", activity.Height)
+	}
+}
+
+func TestHoverLabelsRoundTripThroughJSON(t *testing.T) {
+	o := testChartOptions(false)
+	o.FormatHover = func(time.Time, float64) string { return `Claude "5h" & <x>` }
+	chart := RemainingChart(sawtooth(time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)), o)
+	raw, err := json.Marshal(chart.Hover)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed Hover
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Pts[0].Label != `Claude "5h" & <x>` {
+		t.Errorf("round-trip = %q", parsed.Pts[0].Label)
 	}
 }
 

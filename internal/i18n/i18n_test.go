@@ -36,6 +36,31 @@ func TestJapaneseResetAndNotificationFormatting(t *testing.T) {
 	}
 }
 
+func TestChartHoverFormatting(t *testing.T) {
+	at := time.Date(2026, 8, 13, 22, 5, 0, 0, time.UTC)
+	if got := New("ja").ChartRemainingHover(at, 51); got != "8/13 22:05 · 残り51%" {
+		t.Errorf("ja remaining = %q", got)
+	}
+	if got := New("en").ChartRemainingHover(at, 51); got != "8/13 22:05 · 51% left" {
+		t.Errorf("en remaining = %q", got)
+	}
+	if got := New("ja").ChartHeatHover("月", 9, 0); got != "月 9時 · なし" {
+		t.Errorf("ja empty heat = %q", got)
+	}
+	if got := New("ja").ChartHeatHover("月", 9, 8); got != "月 9時 · 8%消費" {
+		t.Errorf("ja heat = %q", got)
+	}
+	if got := New("en").ChartHeatHover("Mon", 9, 8); got != "Mon 09:00 · 8% used" {
+		t.Errorf("en heat = %q", got)
+	}
+	if got := New("en").T("chartActivityUnit"); got != "% of the limit used that hour" {
+		t.Errorf("activity unit = %q", got)
+	}
+	if got := New("en").ChartTokensHover(at, "12K"); got != "8/13 22:05 · 12K" {
+		t.Errorf("en tokens = %q", got)
+	}
+}
+
 func TestEnglishPluralResetFormatting(t *testing.T) {
 	now := time.Now()
 	_, body := New("en").ResetNotification(2, now.Add(20*time.Hour), now)
