@@ -21,8 +21,8 @@ func notificationDiagnostics() []string {
 		out = append(out, "bundle:     yes — UserNotifications can be used")
 	} else {
 		out = append(out, "bundle:     no — macOS only delivers from usagebat.app;",
-			"            run `usagebat install-app`, then re-run this from",
-			"            /Applications/usagebat.app/Contents/MacOS/usagebat")
+			"            from the source checkout, run `make bundle`, then",
+			"            `./build/usagebat.app/Contents/MacOS/usagebat -notify-test`")
 	}
 	return out
 }

@@ -227,10 +227,7 @@ func (a *app) notifyOnce() error {
 	if err != nil {
 		return err
 	}
-	// macOS hands the request to another queue and returns immediately, so an
-	// exit here would cancel the delivery before it happens.
-	time.Sleep(3 * time.Second)
-	fmt.Println("sent")
+	fmt.Println("notification accepted by the system")
 	return nil
 }
 

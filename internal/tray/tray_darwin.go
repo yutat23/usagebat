@@ -117,10 +117,16 @@ func (b *darwinBackend) Notify(n Notification) error {
 	defer C.free(unsafe.Pointer(title))
 	defer C.free(unsafe.Pointer(body))
 	switch C.ubNotify(title, body) {
-	case 1:
+	case C.UBNotificationAccepted:
 		return nil
-	case -1:
+	case C.UBNotificationInvalidBundle:
 		return fmt.Errorf("%w: macOS rejected the application bundle", ErrNotificationsUnavailable)
+	case C.UBNotificationPermissionPending:
+		return errors.New("macOS notification permission is awaiting approval")
+	case C.UBNotificationPermissionDenied:
+		return errors.New("macOS notifications are disabled for usagebat")
+	case C.UBNotificationTimedOut:
+		return errors.New("macOS did not confirm the notification request in time")
 	default:
 		return fmt.Errorf("notification request was rejected")
 	}

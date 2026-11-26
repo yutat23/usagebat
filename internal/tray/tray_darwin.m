@@ -103,46 +103,59 @@ void ubSetTooltip(const char *s) {
   gDelegate.item.button.toolTip = [NSString stringWithUTF8String:s];
 }
 
-static void ubDeliverNotification(NSString *title, NSString *body) {
+static UNNotificationRequest *ubNotificationRequest(NSString *title, NSString *body) {
   UNMutableNotificationContent *content = [[UNMutableNotificationContent alloc] init];
   content.title = title;
   content.body = body;
   content.sound = [UNNotificationSound defaultSound];
   NSString *identifier = [NSString stringWithFormat:@"usagebat-reset-%@", [[NSUUID UUID] UUIDString]];
-  UNNotificationRequest *request = [UNNotificationRequest requestWithIdentifier:identifier
-                                                                         content:content
-                                                                         trigger:nil];
-  [[UNUserNotificationCenter currentNotificationCenter]
-      addNotificationRequest:request withCompletionHandler:nil];
+  return [UNNotificationRequest requestWithIdentifier:identifier content:content trigger:nil];
 }
 
-int ubNotify(const char *title, const char *body) {
-  if (title == NULL || body == NULL) return 0;
+UBNotificationResult ubNotify(const char *title, const char *body) {
+  if (title == NULL || body == NULL) return UBNotificationRejected;
   @try {
     NSBundle *bundle = [NSBundle mainBundle];
     if (![bundle.bundleURL.pathExtension.lowercaseString isEqualToString:@"app"] ||
         bundle.bundleIdentifier.length == 0) {
-      return -1;
+      return UBNotificationInvalidBundle;
     }
     NSString *titleCopy = [NSString stringWithUTF8String:title];
     NSString *bodyCopy = [NSString stringWithUTF8String:body];
+    if (titleCopy == nil || bodyCopy == nil) return UBNotificationRejected;
+
     UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
+    dispatch_semaphore_t completed = dispatch_semaphore_create(0);
+    __block UBNotificationResult result = UBNotificationRejected;
+    void (^finish)(UBNotificationResult) = ^(UBNotificationResult value) {
+      result = value;
+      dispatch_semaphore_signal(completed);
+    };
     [center getNotificationSettingsWithCompletionHandler:^(UNNotificationSettings *settings) {
       if (settings.authorizationStatus == UNAuthorizationStatusAuthorized ||
           settings.authorizationStatus == UNAuthorizationStatusProvisional) {
-        ubDeliverNotification(titleCopy, bodyCopy);
+        [center addNotificationRequest:ubNotificationRequest(titleCopy, bodyCopy)
+                  withCompletionHandler:^(NSError *error) {
+          finish(error == nil ? UBNotificationAccepted : UBNotificationRejected);
+        }];
         return;
       }
       if (settings.authorizationStatus == UNAuthorizationStatusNotDetermined) {
         [center requestAuthorizationWithOptions:(UNAuthorizationOptionAlert | UNAuthorizationOptionSound)
-                              completionHandler:^(BOOL granted, NSError *error) {
-          if (granted) ubDeliverNotification(titleCopy, bodyCopy);
-        }];
+                              completionHandler:^(BOOL granted, NSError *error) {}];
+        // A user can take arbitrarily long to answer. Leave the event eligible
+        // so the next refresh can schedule it once permission has been granted.
+        finish(UBNotificationPermissionPending);
+        return;
       }
+      finish(UBNotificationPermissionDenied);
     }];
-    return 1;
+    if (dispatch_semaphore_wait(completed, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)) != 0) {
+      return UBNotificationTimedOut;
+    }
+    return result;
   } @catch (NSException *exception) {
-    return -1;
+    return UBNotificationInvalidBundle;
   }
 }
 
