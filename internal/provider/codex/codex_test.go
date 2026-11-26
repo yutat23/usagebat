@@ -95,7 +95,7 @@ func TestMonthlyWindowFromLongPeriod(t *testing.T) {
 	writeRollout(t, home, "2026-08-02", "rollout-a.jsonl",
 		tokenCount("2026-08-02T05:00:00.000Z", jsonBucket(0, 43800, 1788229667), ""))
 
-	st := newProvider(t, home).Collect(time.Now())
+	st := newProvider(t, home).Collect(time.Date(2026, 8, 2, 6, 0, 0, 0, time.UTC))
 	got, ok := st.Windows[model.WindowMonthly]
 	if !ok || !got.Known {
 		t.Fatalf("monthly missing: %+v (%s)", st.Windows, st.Err)
