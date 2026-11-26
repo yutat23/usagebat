@@ -11,7 +11,7 @@ import (
 
 func TestDefaultShowsEveryServiceAndShortestLimit(t *testing.T) {
 	c := Default()
-	for _, source := range []string{model.SourceClaudeCode, model.SourceCodex} {
+	for _, source := range []string{model.SourceClaudeCode, model.SourceCodex, model.SourceAntigravity} {
 		auto, got := c.LimitSelection(source)
 		if !auto || len(got) != 1 || got[0] != model.Window5h {
 			t.Fatalf("default %s limits = auto %v, %v", source, auto, got)
@@ -23,7 +23,7 @@ func TestDefaultShowsEveryServiceAndShortestLimit(t *testing.T) {
 		len(got) != 1 || got[0] != model.WindowMonthly {
 		t.Fatalf("default Cursor limits = auto %v, %v", auto, got)
 	}
-	want := []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor}
+	want := []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor, model.SourceAntigravity}
 	if got := c.EnabledDisplaySources(); !sameStrings(got, want) {
 		t.Fatalf("default display sources = %v, want %v", got, want)
 	}
@@ -131,10 +131,13 @@ func TestToggleDisplaySourcePersistsAndKeepsOne(t *testing.T) {
 	if err := c.ToggleDisplaySource(model.SourceClaudeCode); err != nil {
 		t.Fatal(err)
 	}
-	if got := c.EnabledDisplaySources(); !sameStrings(got, []string{model.SourceCodex, model.SourceCursor}) {
+	if got := c.EnabledDisplaySources(); !sameStrings(got, []string{model.SourceCodex, model.SourceCursor, model.SourceAntigravity}) {
 		t.Fatalf("sources after disabling Claude = %v", got)
 	}
 	if err := c.ToggleDisplaySource(model.SourceCursor); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ToggleDisplaySource(model.SourceAntigravity); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.ToggleDisplaySource(model.SourceCodex); err != nil {
@@ -155,12 +158,25 @@ func TestV8MigrationAddsCursorToTheIcon(t *testing.T) {
 		t.Fatal("expected v8 to migrate")
 	}
 	c.normalise()
-	want := []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor}
+	want := []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor, model.SourceAntigravity}
 	if got := c.EnabledDisplaySources(); !sameStrings(got, want) {
 		t.Fatalf("migrated display sources = %v, want %v", got, want)
 	}
 	if auto, windows := c.LimitSelection(model.SourceCursor); !auto || len(windows) != 1 {
 		t.Fatalf("migrated Cursor limits = auto %v, %v", auto, windows)
+	}
+}
+
+func TestV9MigrationAddsAntigravityWithoutChangingExistingSelections(t *testing.T) {
+	c := Default()
+	c.DisplaySources = []string{model.SourceCodex}
+	if !c.migrate([]byte(`{"version":9}`)) {
+		t.Fatal("expected v9 to migrate")
+	}
+	c.normalise()
+	want := []string{model.SourceCodex, model.SourceAntigravity}
+	if got := c.EnabledDisplaySources(); !sameStrings(got, want) {
+		t.Fatalf("migrated display sources = %v, want %v", got, want)
 	}
 }
 

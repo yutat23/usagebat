@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added Antigravity CLI support for Gemini quota and reset times.
 - Fixed chart hover readouts for unevenly spaced token records and closely spaced quota samples, and kept small heatmap peaks visible in the legend.
 
 ## 0.6.2 — 2026-08-13

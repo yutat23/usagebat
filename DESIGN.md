@@ -2,7 +2,7 @@
 
 ## 1. これは何か
 
-Claude Code / Codex / Cursor の **利用上限（5時間・週次・月次）の残量** を、
+Claude Code / Codex / Cursor / Antigravity（Gemini）の **利用上限（5時間・週次・月次）の残量** を、
 macOS のメニューバー / Windows のタスクトレイに **ドット絵のバッテリー** として常駐表示するアプリ。
 
 - 残量 100% = 満充電、使うほど減る（バッテリーの比喩をそのまま採用）
@@ -14,7 +14,7 @@ macOS のメニューバー / Windows のタスクトレイに **ドット絵の
 
 | 用語 | 意味 |
 |---|---|
-| ソース (source) | 計測対象のツール。`claude-code` / `codex` / `cursor` |
+| ソース (source) | 計測対象のツール。`claude-code` / `codex` / `cursor` / `antigravity` |
 | ウィンドウ (window) | 上限の集計期間。`5h` / `weekly` / `monthly` |
 | used% | そのウィンドウで消費済みの割合 |
 | remaining% | `100 - used%`。バッテリーに表示するのはこちら |
@@ -278,6 +278,13 @@ Codex のような複数プロファイルは持たない。
 | `5h` | 直近アクティビティから遡る 5h ブロック | ccusage と同じ規則: 最初のエントリを時刻切り捨てしてブロック開始、5h 経過 or 5h 以上の無活動で新ブロック |
 | `weekly` | ローリング 7 日 | 実際のリセット曜日はアカウント依存で不明なため。`calendar` + 曜日/時刻指定も可 |
 
+### 3.7 Antigravity — CLI経由でGeminiの利用枠を取得
+
+インストール済みの `agy` に `-p /usage --output-format json` を渡す。
+Geminiのバケットから残量とリセット時刻を読み、実際に返った期間を表示する。
+通常は取得結果を最大5分間再利用し、次のリセット時刻や手動更新に合わせて再取得する。
+認証はCLIが管理する。
+
 ## 4. 表示設計
 
 ### 4.1 ドット絵バッテリー
@@ -475,15 +482,16 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 
 ```jsonc
 {
-  "version": 9,
+  "version": 10,
   "language": "auto",              // auto | en | ja
   "displayMode": "both",           // both | battery | percent
-  "displaySources": ["claude-code", "codex", "cursor"],
+  "displaySources": ["claude-code", "codex", "cursor", "antigravity"],
   "displayLimits": {
     "claude-code": { "autoShortest": true, "windows": ["5h"] },
     "codex": { "autoShortest": true, "windows": ["5h"] },
     // Cursorは請求サイクル枠しか返さないので、明示指定の既定もmonthly
-    "cursor": { "autoShortest": true, "windows": ["monthly"] }
+    "cursor": { "autoShortest": true, "windows": ["monthly"] },
+    "antigravity": { "autoShortest": true, "windows": ["5h"] }
   },
   "refreshSeconds": 60,
   "icon": {
@@ -495,12 +503,12 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
     "light": {
       "good": "#15803D", "warn": "#A16207", "critical": "#BE123C",
       "unknown": "#52525B", "claude": "#A94F32", "codex": "#087567",
-      "cursor": "#6D28D9", "period": "#25272B", "textOnFill": "#F8FAFC"
+      "cursor": "#6D28D9", "antigravity": "#174EA6", "period": "#25272B", "textOnFill": "#F8FAFC"
     },
     "dark": {
       "good": "#4ADE80", "warn": "#FACC15", "critical": "#FB7185",
       "unknown": "#A1A1AA", "claude": "#E58A68", "codex": "#52C7B8",
-      "cursor": "#A78BFA", "period": "#F2F2F2", "textOnFill": "#101010"
+      "cursor": "#A78BFA", "antigravity": "#8AB4F8", "period": "#F2F2F2", "textOnFill": "#101010"
     },
     "warnBelow": 50, "criticalBelow": 20
   },
@@ -542,7 +550,8 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
       "staleAfterSeconds": 900,   // 直前の成功値を再利用してよい上限
       "apiKey": "",               // 空 = $CURSOR_API_KEY、次にOS資格情報ストア
       "endpoint": ""              // 空 = $CURSOR_API_ENDPOINT、次にCursorの既定
-    }
+    },
+    "antigravity": { "enabled": true }
   }
 }
 ```
@@ -551,10 +560,10 @@ internal/tray/                   Backend インタフェース + darwin(cgo) / w
 
 既定の `autoShortest` では、サービスごとに実在する最短枠を1つ選び、別セルで表示する。
 たとえばClaudeの5h枠は `CL5H`、Codex Teamの月次枠は `CXMO`、Cursorの請求サイクル枠は
-`CUMO` となる。
+`CUMO`、AntigravityのGemini 5h枠は `AG5H` となる。
 Codexに複数アカウントがある場合は、アカウントごとに別セルで表示する。
 設定された `short` を `CX` の代わりに描き、アカウントを見分けられるようにする。
-表示するサービスは3つから任意に選べる。
+アイコンに表示するサービスは設定で選べる。
 固定期間も `displayLimits` によりサービスごとに独立し、Claudeを5h、Codexをmonthlyのように
 別々に指定できる。
 バッテリーとして意味があるのは「あと何ができるか」なので、最も逼迫した制約が正しい。

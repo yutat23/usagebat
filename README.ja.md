@@ -4,7 +4,7 @@
 
 <img src="assets/usagebat.png" width="160" alt="usagebatのピクセルアート電池コウモリアイコン">
 
-usagebatは、Claude Code・Codex・Cursorの残り利用枠を、macOSのメニューバーまたはWindowsのシステムトレイに小さなピクセルアート電池として表示します。
+usagebatは、Claude Code・Codex・Cursor・Antigravity（Gemini）の残り利用枠を、macOSのメニューバーまたはWindowsのシステムトレイに小さなピクセルアート電池として表示します。
 
 表示するのは使用率ではなく残量です。`100%`が満タンで、利用するほど電池が減っていきます。
 
@@ -23,8 +23,8 @@ Windowsのトレイアイコンは正方形に固定されています。既定�
 ## 主な機能
 
 - サービスが提供する5時間・週間・月間の実測値を表示
-- Claude Code・Codex・Cursorを分け、期間を個別に選択
-- 未インストール・未ログインのサービスを自動的に非表示
+- サービスごとにアイコン表示の有無と期間を選択
+- インストール済みのCLIを自動検出
 - リセット時刻とトークン詳細をメニューに表示
 - ライト／ダークのシステムバーに合わせて配色を変更
 - Codexのbanked reset所持数と最短期限を表示
@@ -42,7 +42,7 @@ Windowsのトレイアイコンは正方形に固定されています。既定�
 | Windows Intel / AMD | `usagebat_0.6.2_windows_amd64.zip` |
 | Windows on ARM | `usagebat_0.6.2_windows_arm64.zip` |
 
-Claude Code・Codex・Cursor CLI（`agent login`）のいずれかがインストールされ、ログイン済みである必要があります。
+Claude Code・Codex・Cursor CLI（`agent login`）・[Antigravity CLI](https://antigravity.google/docs/getting-started?tab=cli)（`agy`、現時点ではソースからのビルドで対応）のいずれかがインストールされ、ログイン済みである必要があります。
 
 ### macOS
 
@@ -72,7 +72,7 @@ macOSではメニューバー項目をクリック、Windowsではトレイア�
 - 実行中のバージョン確認とGitHubへのリンク
 - 終了
 
-既定では、各サービスが実際に報告する最短の制限を選択します。`CL5H`はClaude Codeの5時間枠、`CXWK`はCodexの週間枠、`CUMO`はCursorの請求サイクル枠です。
+既定では、各サービスが実際に報告する最短の制限を選択します。`CL5H`はClaude Codeの5時間枠、`CXWK`はCodexの週間枠、`CUMO`はCursorの請求サイクル枠、`AG5H`はAntigravityのGemini 5時間枠です。
 
 アイコンはシステムバーの外観に追従します。`CL`はClaudeのテラコッタ、`CX`はCodexのティール、`CU`はCursorのバイオレットで、期間の`5H`／`WK`／`MO`はすべて同じ高コントラスト色です。
 
@@ -151,6 +151,10 @@ Cursorの枠は請求サイクル単位で、それより短い枠は返って�
 
 リクエストは`sources.cursor.minIntervalSeconds`（既定30秒）に1回までスロットルされます。「今すぐ更新」はこれを無視して取得します。取得に失敗した場合は`staleAfterSeconds`（既定900秒）以内に限り、直前の成功値を「前回の取得値」と明示したうえで表示し続けます。
 
+### Antigravity（Gemini）
+
+`agy`をインストールしてログインし、usagebatを起動します。`agy -p /usage --output-format json`が返すGeminiの5時間枠・週間枠の残量とリセット時刻を読み取ります。認証にはCLIのログイン状態が使われます。通常は最大5分間、直近の取得結果を使い、「今すぐ更新」ではその場で取得します。取得の有無は`sources.antigravity.enabled`で設定できます。
+
 ## banked resetの期限通知
 
 既定では、期限7日前と24時間前に一度ずつ通知します。
@@ -207,6 +211,7 @@ usagebat.exe -notify-test
 | `sources.cursor.enabled` | Cursorを読むかどうか |
 | `sources.cursor.apiKey` | OS資格情報ストアの代わりに使うトークン |
 | `sources.cursor.minIntervalSeconds` | ダッシュボードへの最短リクエスト間隔 |
+| `sources.antigravity.enabled` | Antigravity（Gemini）の利用枠を読むかどうか |
 | `notifications.limitThresholds` | 残量が閾値を割ったときの通知 |
 
 ## 自動起動

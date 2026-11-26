@@ -44,7 +44,7 @@ func (m DisplayMode) Title() string {
 
 // SchemaVersion is the config layout this build writes. Bumping it makes
 // migrate rewrite the file once, so an added setting appears with its default.
-const SchemaVersion = 9
+const SchemaVersion = 10
 
 // Config is the on-disk configuration.
 type Config struct {
@@ -142,22 +142,29 @@ type Colors struct {
 
 // ThemeColors is one complete palette for a light or dark system bar.
 type ThemeColors struct {
-	Good       string `json:"good"`
-	Warn       string `json:"warn"`
-	Critical   string `json:"critical"`
-	Unknown    string `json:"unknown"`
-	Claude     string `json:"claude"`
-	Codex      string `json:"codex"`
-	Cursor     string `json:"cursor"`
-	Period     string `json:"period"`
-	TextOnFill string `json:"textOnFill"`
+	Good        string `json:"good"`
+	Warn        string `json:"warn"`
+	Critical    string `json:"critical"`
+	Unknown     string `json:"unknown"`
+	Claude      string `json:"claude"`
+	Codex       string `json:"codex"`
+	Cursor      string `json:"cursor"`
+	Antigravity string `json:"antigravity"`
+	Period      string `json:"period"`
+	TextOnFill  string `json:"textOnFill"`
 }
 
 // Sources groups the per-provider settings.
 type Sources struct {
-	ClaudeCode ClaudeCode `json:"claudeCode"`
-	Codex      Codex      `json:"codex"`
-	Cursor     Cursor     `json:"cursor"`
+	ClaudeCode  ClaudeCode  `json:"claudeCode"`
+	Codex       Codex       `json:"codex"`
+	Cursor      Cursor      `json:"cursor"`
+	Antigravity Antigravity `json:"antigravity"`
+}
+
+// Antigravity configures the signed-in CLI quota reader.
+type Antigravity struct {
+	Enabled bool `json:"enabled"`
 }
 
 // ClaudeCode configures the local service-usage cache, the legacy /usage
@@ -287,13 +294,14 @@ func Default() *Config {
 		Version:        SchemaVersion,
 		Language:       "auto",
 		DisplayMode:    ModeBoth,
-		DisplaySources: []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor},
+		DisplaySources: append([]string(nil), allDisplaySources...),
 		DisplayLimits: map[string]LimitDisplay{
 			model.SourceClaudeCode: {AutoShortest: true, Windows: []string{"5h"}},
 			model.SourceCodex:      {AutoShortest: true, Windows: []string{"5h"}},
 			// Cursor only ever reports its billing cycle, so an explicit
 			// selection of anything else would leave the cell permanently blank.
-			model.SourceCursor: {AutoShortest: true, Windows: []string{"monthly"}},
+			model.SourceCursor:      {AutoShortest: true, Windows: []string{"monthly"}},
+			model.SourceAntigravity: {AutoShortest: true, Windows: []string{"5h"}},
 		},
 		RefreshSeconds: 60,
 		Icon: Icon{
@@ -305,12 +313,12 @@ func Default() *Config {
 			Light: ThemeColors{
 				Good: "#15803D", Warn: "#A16207", Critical: "#BE123C",
 				Unknown: "#52525B", Claude: "#A94F32", Codex: "#087567",
-				Cursor: "#6D28D9", Period: "#25272B", TextOnFill: "#F8FAFC",
+				Cursor: "#6D28D9", Antigravity: "#174EA6", Period: "#25272B", TextOnFill: "#F8FAFC",
 			},
 			Dark: ThemeColors{
 				Good: "#4ADE80", Warn: "#FACC15", Critical: "#FB7185",
 				Unknown: "#A1A1AA", Claude: "#E58A68", Codex: "#52C7B8",
-				Cursor: "#A78BFA", Period: "#F2F2F2", TextOnFill: "#101010",
+				Cursor: "#A78BFA", Antigravity: "#8AB4F8", Period: "#F2F2F2", TextOnFill: "#101010",
 			},
 			WarnBelow:     50,
 			CriticalBelow: 20,
@@ -359,6 +367,7 @@ func Default() *Config {
 				MinIntervalSeconds: 30,
 				StaleAfterSeconds:  900,
 			},
+			Antigravity: Antigravity{Enabled: true},
 		},
 	}
 }
@@ -419,7 +428,7 @@ func Load() (*Config, error) {
 // V4 made period selection independent per service. V5 added separate light
 // and dark palettes. V6 added localization and reset-expiry notifications.
 // V7 added the update check. V8 added independently named Claude profiles.
-// V9 added Cursor.
+// V9 added Cursor. V10 added Antigravity.
 func (c *Config) migrate(data []byte) bool {
 	var raw map[string]json.RawMessage
 	if json.Unmarshal(data, &raw) != nil {
@@ -458,6 +467,9 @@ func (c *Config) migrate(data []byte) bool {
 		// to hide, so it joins the icon selection rather than waiting to be
 		// discovered in the settings.
 		c.DisplaySources = append(c.DisplaySources, model.SourceCursor)
+	}
+	if version < 10 {
+		c.DisplaySources = append(c.DisplaySources, model.SourceAntigravity)
 	}
 	c.migrateCodexHomes()
 	if len(c.Sources.ClaudeCode.Profiles) == 0 {
@@ -547,6 +559,9 @@ func fillTheme(dst, defaults ThemeColors) ThemeColors {
 	}
 	if dst.Cursor == "" {
 		dst.Cursor = defaults.Cursor
+	}
+	if dst.Antigravity == "" {
+		dst.Antigravity = defaults.Antigravity
 	}
 	if dst.Period == "" {
 		dst.Period = defaults.Period
@@ -701,7 +716,7 @@ func normaliseThresholds(values, defaults []int) []int {
 	return out
 }
 
-var allDisplaySources = []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor}
+var allDisplaySources = []string{model.SourceClaudeCode, model.SourceCodex, model.SourceCursor, model.SourceAntigravity}
 
 // EnabledDisplaySources returns the provider families included in the tray
 // icon. Collection and menu details remain enabled independently under Sources.
@@ -1092,6 +1107,8 @@ func (c *Config) setEditableColorOrProfile(key, value string) error {
 			theme.Codex = value
 		case "cursor":
 			theme.Cursor = value
+		case "antigravity":
+			theme.Antigravity = value
 		case "period":
 			theme.Period = value
 		case "textOnFill":

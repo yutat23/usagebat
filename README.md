@@ -4,7 +4,7 @@
 
 <img src="assets/usagebat.png" width="160" alt="usagebat pixel-art battery bat icon">
 
-usagebat keeps the remaining Claude Code, Codex, and Cursor limits visible as a small pixel-art battery in the macOS menu bar or Windows system tray.
+usagebat keeps the remaining Claude Code, Codex, Cursor, and Antigravity (Gemini) limits visible as a small pixel-art battery in the macOS menu bar or Windows system tray.
 
 It shows remaining capacity, not usage: `100%` is full, and the battery drains as you work.
 
@@ -23,9 +23,8 @@ Windows tray icons have a fixed square shape. With the default `stack` layout, o
 ## Features
 
 - Shows real 5-hour, weekly, or monthly limits when the service provides them
-- Keeps Claude Code, Codex, and Cursor in separate cells, with independent period settings
-- Lets you show any combination of the three services
-- Automatically hides a service when its CLI is not installed or not signed in
+- Keeps services in separate cells, with independent period settings and icon visibility
+- Detects installed CLIs automatically
 - Shows reset times and token details in the tray menu
 - Offers battery with percentage, battery-only, and percentage-only styles
 - Changes from green to yellow below 50%, then red below 20%
@@ -51,8 +50,9 @@ Most Windows computers need the `amd64` build. Use `arm64` only for a Windows on
 At least one supported CLI must be installed and signed in:
 
 - [Claude Code](https://code.claude.com/docs),
-- [OpenAI Codex](https://developers.openai.com/codex/cli), or
-- [Cursor CLI](https://cursor.com/cli) (`agent login`)
+- [OpenAI Codex](https://developers.openai.com/codex/cli),
+- [Cursor CLI](https://cursor.com/cli) (`agent login`), or
+- [Antigravity CLI](https://antigravity.google/docs/getting-started?tab=cli) (`agy`, available in the current source build)
 
 ### macOS
 
@@ -81,9 +81,9 @@ Click the menu-bar item on macOS, or right-click the tray icon on Windows. The m
 - enable banked-reset expiration notifications; and
 - see the running version and open the project on GitHub.
 
-By default, usagebat selects the shortest limit each service actually reports. Labels combine the service and period: `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, and `CUMO` is Cursor's billing-cycle limit.
+By default, usagebat selects the shortest limit each service actually reports. `CL5H` is Claude Code's 5-hour limit, `CXWK` is Codex's weekly limit, `CUMO` is Cursor's billing-cycle limit, and `AG5H` is Antigravity's Gemini 5-hour limit.
 
-The icon follows the system bar appearance. `CL` uses a Claude terracotta, `CX` a Codex teal, and `CU` a Cursor violet; all period suffixes (`5H`, `WK`, and `MO`) share a neutral high-contrast color. Battery status colors also switch between light and dark variants so warning yellow and other details remain legible.
+The icon follows the system bar appearance. `CL` uses terracotta, `CX` teal, `CU` violet, and `AG` blue. All period suffixes (`5H`, `WK`, and `MO`) share a neutral high-contrast color. Battery status colors also switch between light and dark variants so warning yellow and other details remain legible.
 
 If Claude Code or Codex has multiple configured accounts, each account gets its own cell. A configured `short` replaces the generic `CL`/`CX` label, so work and personal profiles can appear as `CW` and `CP`. A single unnamed default profile keeps the compact service label:
 
@@ -164,6 +164,10 @@ Pay-as-you-go spending sits outside the included quota and cannot be folded into
 
 Requests are throttled to one per `sources.cursor.minIntervalSeconds` (30 by default), which **Refresh now** bypasses. If a request fails, the last good reading stays visible, marked as such, for up to `staleAfterSeconds` (900 by default) before being discarded.
 
+### Antigravity (Gemini)
+
+Install and sign in to `agy`, then launch usagebat. It reads Gemini's reported 5-hour and weekly quotas and reset times from `agy -p /usage --output-format json` when the CLI provides them. Authentication stays with the CLI. The tray normally uses the latest reading for up to five minutes, and **Refresh now** runs a fresh query immediately. `sources.antigravity.enabled` controls collection.
+
 ## Configuration
 
 Choose **Settings…** from the tray menu to edit the usual display, refresh,
@@ -188,6 +192,7 @@ Common settings include:
 | `displayLimits.claude-code` | Claude Code's automatic or explicit periods |
 | `displayLimits.codex` | Codex's automatic or explicit periods |
 | `displayLimits.cursor` | Cursor's automatic or explicit periods |
+| `displayLimits.antigravity` | Antigravity Gemini's automatic or explicit periods |
 | `refreshSeconds` | Refresh interval; 60 seconds by default |
 | `icon.dotSize` | macOS menu-bar artwork size |
 | `icon.windowsLayout` | `stack` or `single` on Windows |
@@ -203,6 +208,7 @@ Common settings include:
 | `sources.cursor.enabled` | Whether to read Cursor at all |
 | `sources.cursor.apiKey` | Token to use instead of the OS credential store |
 | `sources.cursor.minIntervalSeconds` | Shortest gap between dashboard requests |
+| `sources.antigravity.enabled` | Whether to read Antigravity Gemini quotas |
 | `notifications.limitThresholds` | Warn when headroom drops past a percentage |
 
 The default theme palettes can be customized independently. Changes are picked up while usagebat is running:
@@ -212,12 +218,12 @@ The default theme palettes can be customized independently. Changes are picked u
   "light": {
     "good": "#15803D", "warn": "#A16207", "critical": "#BE123C",
     "unknown": "#52525B", "claude": "#A94F32", "codex": "#087567",
-    "cursor": "#6D28D9", "period": "#25272B", "textOnFill": "#F8FAFC"
+    "cursor": "#6D28D9", "antigravity": "#174EA6", "period": "#25272B", "textOnFill": "#F8FAFC"
   },
   "dark": {
     "good": "#4ADE80", "warn": "#FACC15", "critical": "#FB7185",
     "unknown": "#A1A1AA", "claude": "#E58A68", "codex": "#52C7B8",
-    "cursor": "#A78BFA", "period": "#F2F2F2", "textOnFill": "#101010"
+    "cursor": "#A78BFA", "antigravity": "#8AB4F8", "period": "#F2F2F2", "textOnFill": "#101010"
   },
   "warnBelow": 50,
   "criticalBelow": 20

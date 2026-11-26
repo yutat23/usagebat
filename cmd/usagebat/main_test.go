@@ -155,9 +155,9 @@ func TestRebuildCreatesOnlyInstalledProviders(t *testing.T) {
 	}
 	cfg.Sources.ClaudeCode.UsageCommand.Path = fakeClaude
 	cfg.Sources.Codex.Path = filepath.Join(dir, "missing-codex")
-	// Cursor's availability depends on the developer's own keychain, which is
-	// not something a unit test may consult.
+	// Keep the other providers independent of the test machine.
 	cfg.Sources.Cursor.Enabled = false
+	cfg.Sources.Antigravity.Enabled = false
 
 	a := &app{cfg: cfg}
 	a.rebuild()
@@ -206,6 +206,21 @@ func TestDisplayCellsUseIndependentExplicitLimits(t *testing.T) {
 	if len(cells) != 2 || cells[0].Service != model.SourceClaudeCode || cells[0].Period != "WK" ||
 		cells[1].Service != model.SourceCodex || cells[1].Period != "MO" {
 		t.Fatalf("independent cells = %+v", cells)
+	}
+}
+
+func TestAntigravityUsesItsOwnShortestLimit(t *testing.T) {
+	snap := &model.Snapshot{Sources: []model.SourceStatus{{
+		ID: model.SourceAntigravity, Name: "Antigravity (Gemini)",
+		Windows: map[model.Window]model.WindowStatus{
+			model.Window5h:     {Known: true, UsedPercent: 20},
+			model.WindowWeekly: {Known: true, UsedPercent: 50},
+		},
+	}}}
+	cells := displayCells(config.Default(), snap)
+	if len(cells) != 1 || cells[0].Service != model.SourceAntigravity ||
+		cells[0].Profile != "" || cells[0].Period != "5H" || cells[0].Status.RemainingPercent() != 80 {
+		t.Fatalf("Antigravity indicator = %+v", cells)
 	}
 }
 

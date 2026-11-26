@@ -37,12 +37,12 @@ const (
 
 // Palette is the resolved colour set.
 type Palette struct {
-	Good, Warn, Critical          rgba
-	Unknown                       rgba
-	Claude, Codex, Cursor, Period rgba
-	TextOnFill                    rgba
-	WarnBelow                     float64
-	CriticalBelow                 float64
+	Good, Warn, Critical                       rgba
+	Unknown                                    rgba
+	Claude, Codex, Cursor, Antigravity, Period rgba
+	TextOnFill                                 rgba
+	WarnBelow                                  float64
+	CriticalBelow                              float64
 }
 
 // PaletteFrom resolves configured hex strings, falling back to the defaults for
@@ -60,6 +60,7 @@ func PaletteFrom(c config.Colors, dark bool) Palette {
 		Claude:        parseHex(t.Claude, rgba{0xA9, 0x4F, 0x32, 0xFF}),
 		Codex:         parseHex(t.Codex, rgba{0x08, 0x75, 0x67, 0xFF}),
 		Cursor:        parseHex(t.Cursor, rgba{0x6D, 0x28, 0xD9, 0xFF}),
+		Antigravity:   parseHex(t.Antigravity, rgba{0x17, 0x4E, 0xA6, 0xFF}),
 		Period:        parseHex(t.Period, rgba{0x25, 0x27, 0x2B, 0xFF}),
 		TextOnFill:    parseHex(t.TextOnFill, rgba{0xF8, 0xFA, 0xFC, 0xFF}),
 		WarnBelow:     orDefault(c.WarnBelow, 50),
@@ -278,6 +279,8 @@ func cellLabels(item Cell) (string, string) {
 		return "CX", item.Period
 	case model.SourceCursor:
 		return "CU", item.Period
+	case model.SourceAntigravity:
+		return "AG", item.Period
 	default:
 		return "", item.Period
 	}
@@ -293,6 +296,8 @@ func drawCellLabel(c *canvas, x int, service, period, source string, p Palette) 
 			col = p.Codex
 		case model.SourceCursor:
 			col = p.Cursor
+		case model.SourceAntigravity:
+			col = p.Antigravity
 		}
 		drawText(c, x, 0, service, solid(col))
 		x += textWidth(service) + glyphGap

@@ -12,7 +12,7 @@ import (
 // Implementations are called from a single goroutine on a timer and may keep
 // caches between calls; they must not block for long.
 type Provider interface {
-	// ID is a stable identifier ("claude-code", "codex", "cursor").
+	// ID is a stable provider or profile identifier.
 	ID() string
 	// Collect returns the state as of now.
 	Collect(now time.Time) model.SourceStatus

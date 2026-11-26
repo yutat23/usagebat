@@ -363,7 +363,8 @@ func (a *app) settingsPage() webui.Page {
 	colorFields := []struct{ key, label string }{
 		{"good", "colorGood"}, {"warn", "colorWarn"}, {"critical", "colorCritical"},
 		{"unknown", "colorUnknown"}, {"claude", "colorClaude"}, {"codex", "colorCodex"},
-		{"cursor", "colorCursor"}, {"period", "colorPeriod"}, {"textOnFill", "colorTextOnFill"},
+		{"cursor", "colorCursor"}, {"antigravity", "colorAntigravity"},
+		{"period", "colorPeriod"}, {"textOnFill", "colorTextOnFill"},
 	}
 	for _, theme := range []struct {
 		key, title string
@@ -373,7 +374,7 @@ func (a *app) settingsPage() webui.Page {
 		values := map[string]string{
 			"good": theme.colors.Good, "warn": theme.colors.Warn, "critical": theme.colors.Critical,
 			"unknown": theme.colors.Unknown, "claude": theme.colors.Claude, "codex": theme.colors.Codex,
-			"cursor": theme.colors.Cursor, "period": theme.colors.Period,
+			"cursor": theme.colors.Cursor, "antigravity": theme.colors.Antigravity, "period": theme.colors.Period,
 			"textOnFill": theme.colors.TextOnFill,
 		}
 		section := webui.Section{Title: theme.title}

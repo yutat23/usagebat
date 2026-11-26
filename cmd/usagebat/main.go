@@ -1,4 +1,4 @@
-// Command usagebat shows Claude Code, Codex and Cursor limit headroom as a
+// Command usagebat shows coding assistant limit headroom as a
 // pixel-art battery in the macOS menu bar or the Windows tray.
 package main
 
@@ -27,6 +27,7 @@ import (
 	"github.com/yutat23/usagebat/internal/model"
 	notifyengine "github.com/yutat23/usagebat/internal/notify"
 	"github.com/yutat23/usagebat/internal/provider"
+	"github.com/yutat23/usagebat/internal/provider/antigravity"
 	"github.com/yutat23/usagebat/internal/provider/claudecode"
 	"github.com/yutat23/usagebat/internal/provider/codex"
 	"github.com/yutat23/usagebat/internal/provider/cursor"
@@ -252,6 +253,11 @@ func (a *app) rebuild() {
 			a.providers = append(a.providers, p)
 		}
 	}
+	if a.cfg.Sources.Antigravity.Enabled {
+		if p := antigravity.Detect(); p != nil {
+			a.providers = append(a.providers, p)
+		}
+	}
 }
 
 // currentConfig returns the live config pointer. Its own methods are
@@ -380,6 +386,7 @@ var services = []struct{ ID, Name string }{
 	{model.SourceClaudeCode, "Claude Code"},
 	{model.SourceCodex, "Codex"},
 	{model.SourceCursor, "Cursor"},
+	{model.SourceAntigravity, "Antigravity (Gemini)"},
 }
 
 // serviceName is the display name of a family, falling back to the raw id so
@@ -403,6 +410,8 @@ func limitsTitle(id string, p i18n.Printer) string {
 		return p.T("codexLimits")
 	case model.SourceCursor:
 		return p.T("cursorLimits")
+	case model.SourceAntigravity:
+		return p.T("antigravityLimits")
 	}
 	return serviceName(id)
 }
@@ -562,9 +571,8 @@ func displayCells(cfg *config.Config, snap *model.Snapshot) []render.Cell {
 		for _, target := range displayTargets(snap, selected) {
 			// A target can name a whole service or one account of it. Naming an
 			// account draws it on its own with the configured abbreviation.
-			family, profile := target, ""
-			if source, ok := findSource(snap, target); ok {
-				family = sourceFamily(target)
+			family, profile := sourceFamily(target), ""
+			if source, ok := findSource(snap, target); ok && (target != family || source.Short != "") {
 				profile = profileAbbreviation(source)
 			}
 			aggregated := &model.Snapshot{Sources: snap.Sources}
