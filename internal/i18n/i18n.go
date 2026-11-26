@@ -308,26 +308,18 @@ func (p Printer) ChartTokensHover(t time.Time, tokens string) string {
 	return p.ChartWhen(t) + " · " + tokens
 }
 
-// ChartHeatHover is the pointer readout on one heatmap cell. The value is
-// percentage points of the limit consumed in that hour, so the unit is always %.
-func (p Printer) ChartHeatHover(weekday string, hour int, value float64) string {
+// ChartHeatHover reads out the formatted percentage, or an empty cell.
+func (p Printer) ChartHeatHover(weekday string, hour int, percent string) string {
 	if p.Japanese() {
-		if value <= 0 {
+		if percent == "" {
 			return fmt.Sprintf("%s %d時 · なし", weekday, hour)
 		}
-		return fmt.Sprintf("%s %d時 · %s消費", weekday, hour, heatPercent(value))
+		return fmt.Sprintf("%s %d時 · %s消費", weekday, hour, percent)
 	}
-	if value <= 0 {
+	if percent == "" {
 		return fmt.Sprintf("%s %02d:00 · none", weekday, hour)
 	}
-	return fmt.Sprintf("%s %02d:00 · %s used", weekday, hour, heatPercent(value))
-}
-
-func heatPercent(v float64) string {
-	if v > 0 && v < 1 {
-		return fmt.Sprintf("%.1f%%", v)
-	}
-	return fmt.Sprintf("%.0f%%", v)
+	return fmt.Sprintf("%s %02d:00 · %s used", weekday, hour, percent)
 }
 
 // UpdateAvailable labels the row that opens a newer release.

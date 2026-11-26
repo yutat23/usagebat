@@ -168,7 +168,7 @@ func TestChartsCarryHoverReadout(t *testing.T) {
 	}
 
 	usage := UsageChart(points, o)
-	if usage.Hover.Kind != "line" || len(usage.Hover.Pts) == 0 {
+	if usage.Hover.Kind != "bar" || len(usage.Hover.Pts) == 0 {
 		t.Fatalf("usage hover = %+v", usage.Hover)
 	}
 
@@ -209,6 +209,60 @@ func TestHoverLabelsRoundTripThroughJSON(t *testing.T) {
 	}
 }
 
+func TestUsageHoverUsesBarPositions(t *testing.T) {
+	o := testChartOptions(false)
+	o.FormatHover = func(at time.Time, count float64) string {
+		return at.Format("15:04") + " · " + FormatCount(count)
+	}
+	start := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
+	points := []history.Point{
+		{At: start, Value: 50},
+		{At: start.Add(time.Minute), Value: 900},
+		{At: start.Add(time.Hour), Value: 90},
+	}
+	chart := UsageChart(points, o)
+	for i, want := range []string{"00:00 · 50", "00:01 · 900", "01:00 · 90"} {
+		got := chart.Hover.Pts[i]
+		x := chart.Hover.Plot[0] + (float64(i)+0.5)*chart.Hover.Plot[2]/3
+		if got.X != hoverCoord(x) || got.Label != want {
+			t.Errorf("bar %d hover = %+v, want x=%.2f and %q", i, got, x, want)
+		}
+	}
+	chart = UsageChart(points[:1], o)
+	if len(chart.Hover.Pts) != 1 || chart.Hover.Pts[0].Label != "00:00 · 50" {
+		t.Errorf("single bar hover = %+v", chart.Hover)
+	}
+}
+
+func TestRemainingHoverKeepsAdjacentExtremes(t *testing.T) {
+	o := testChartOptions(false)
+	o.FormatHover = func(_ time.Time, v float64) string { return fmt.Sprintf("%g", v) }
+	start := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
+	chart := RemainingChart([]history.Point{
+		{At: start, Value: 90},
+		{At: start.Add(3 * time.Minute), Value: 5},
+		{At: start.Add(4 * time.Minute), Value: 100},
+		{At: start.Add(7 * 24 * time.Hour), Value: 87},
+	}, o)
+	if got := chart.Hover.Pts; len(got) != 4 || got[1].Label != "5" || got[2].Label != "100" {
+		t.Errorf("hover samples = %+v", got)
+	}
+}
+
+func TestActivityLegendKeepsSmallPeaksDistinctFromZero(t *testing.T) {
+	for _, tc := range []struct {
+		peak float64
+		want string
+	}{{0.4, "0.4%"}, {0.03, "&lt;0.1%"}} {
+		var heat history.Heatmap
+		heat[time.Monday][9] = tc.peak
+		chart := ActivityChart(heat, testChartOptions(false))
+		if !strings.Contains(chart.SVG, ">"+tc.want+"</text>") {
+			t.Errorf("peak of %g has no %q label", tc.peak, tc.want)
+		}
+	}
+}
+
 func TestRemainingInkFollowsTheBatteryThresholds(t *testing.T) {
 	p := PaletteFrom(config.Default().Colors, false)
 	if p.remainingInk(90) != p.Good {
@@ -227,8 +281,8 @@ func TestFormatCount(t *testing.T) {
 		in   float64
 		want string
 	}{{0, "0"}, {950, "950"}, {1500, "2K"}, {2_400_000, "2M"}, {3e9, "3G"}} {
-		if got := formatCount(tc.in); got != tc.want {
-			t.Errorf("formatCount(%v) = %q, want %q", tc.in, got, tc.want)
+		if got := FormatCount(tc.in); got != tc.want {
+			t.Errorf("FormatCount(%v) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }

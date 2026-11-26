@@ -166,6 +166,7 @@
     return {
       x: (clientX - s.rect.left - s.ox) / s.scale,
       y: (clientY - s.rect.top - s.oy) / s.scale,
+      scale: s.scale,
     };
   }
 
@@ -179,15 +180,39 @@
     };
   }
 
-  function nearestPoint(pts, x) {
-    var lo = 0, hi = pts.length - 1;
+  function lowerBound(pts, x) {
+    var lo = 0, hi = pts.length;
     while (lo < hi) {
       var mid = (lo + hi) >> 1;
       if (pts[mid].x < x) lo = mid + 1;
       else hi = mid;
     }
-    if (lo > 0 && Math.abs(pts[lo - 1].x - x) < Math.abs(pts[lo].x - x)) return pts[lo - 1];
-    return pts[lo];
+    return lo;
+  }
+
+  function nearestPoint(pts, at, radius) {
+    var right = lowerBound(pts, at.x);
+    var left = right - 1;
+    var nearest = pts[right];
+    if (!nearest || (left >= 0 && at.x - pts[left].x < nearest.x - at.x)) {
+      nearest = pts[left];
+    }
+    if (!radius) return nearest;
+
+    // Nearby line samples can overlap horizontally. Use both coordinates
+    // within a few screen pixels so the point at the bottom of a dip wins
+    // when the pointer is on it.
+    var bestDistance = Infinity;
+    for (var i = lowerBound(pts, at.x - radius); i < pts.length && pts[i].x <= at.x + radius; i++) {
+      var dx = pts[i].x - at.x;
+      var dy = pts[i].y - at.y;
+      var distance = dx * dx + dy * dy;
+      if (distance < bestDistance) {
+        nearest = pts[i];
+        bestDistance = distance;
+      }
+    }
+    return nearest;
   }
 
   function hoverData(figure) {
@@ -270,7 +295,7 @@
         }
         pt = data.pts[row * 24 + col];
       } else {
-        pt = nearestPoint(data.pts, at.x);
+        pt = nearestPoint(data.pts, at, data.k === "line" ? 4 / at.scale : 0);
       }
       if (!pt) {
         hide();

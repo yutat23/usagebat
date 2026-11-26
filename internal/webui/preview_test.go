@@ -15,8 +15,7 @@ import (
 	"github.com/yutat23/usagebat/internal/render"
 )
 
-// previewChart draws a real chart, both themes, exactly as the app does. The
-// dependency on render is test-only; the package itself never imports it.
+// previewChart draws a real chart in both themes, as the app does.
 func previewChart() template.HTML {
 	start := time.Date(2026, 8, 3, 0, 0, 0, 0, time.UTC)
 	var points []history.Point
@@ -47,23 +46,11 @@ func previewChart() template.HTML {
 	return template.HTML(markup.String())
 }
 
-func previewMascot() template.HTML {
-	var markup strings.Builder
-	for _, dark := range []bool{false, true} {
-		class := "only-light"
-		if dark {
-			class = "only-dark"
-		}
-		markup.WriteString(`<span class="` + class + `">` + render.Mascot("usagebat", dark).SVG + `</span>`)
-	}
-	return template.HTML(markup.String())
-}
-
 // samplePage stands in for a machine with both services configured, so the
 // preview shows every kind of row the real screen can produce.
 func samplePage() Page {
 	return Page{
-		Mascot:         previewMascot(),
+		Mascot:         Mascot("usagebat"),
 		Title:          "usagebat の設定",
 		Version:        "0.6.0",
 		OverviewLabel:  "概要",

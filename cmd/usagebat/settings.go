@@ -192,7 +192,7 @@ func (a *app) settingsPage() webui.Page {
 		SaveErrorLabel: p.T("saveFailed"),
 		Footer:         p.T("viewOnGitHub"),
 		FooterHref:     homepageURL,
-		Mascot:         mascot(p),
+		Mascot:         webui.Mascot(p.T("settingsTitle")),
 		Sections:       a.chartSections(cfg, snap, p),
 	}
 	add := func(categoryID, categoryTitle string, s webui.Section) {

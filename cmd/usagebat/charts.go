@@ -25,21 +25,6 @@ const (
 	chartH = 120
 )
 
-// mascot is stable brand artwork. Live usage belongs in batteries, numbers and
-// charts; the character never rewards or judges how much somebody used.
-func mascot(p i18n.Printer) template.HTML {
-	label := p.T("settingsTitle")
-	var markup strings.Builder
-	for _, dark := range []bool{false, true} {
-		class := "only-light"
-		if dark {
-			class = "only-dark"
-		}
-		markup.WriteString(`<span class="` + class + `">` + render.Mascot(label, dark).SVG + `</span>`)
-	}
-	return template.HTML(markup.String())
-}
-
 // chartSections builds the usage charts from recorded history.
 //
 // Reading the file happens per page load rather than on a timer: the settings
@@ -94,7 +79,11 @@ func (a *app) chartSections(cfg *config.Config, snap *model.Snapshot, p i18n.Pri
 				o.Width, o.Height = 0, 0 // the heatmap sizes itself
 				days := p.Weekdays()
 				o.FormatHeat = func(day, hour int, v float64) string {
-					return p.ChartHeatHover(days[day], hour, v)
+					percent := ""
+					if v > 0 {
+						percent = render.FormatHeatPercent(v)
+					}
+					return p.ChartHeatHover(days[day], hour, percent)
 				}
 				return render.ActivityChart(heat, o)
 			}, cfg, p, label))

@@ -227,8 +227,9 @@ func TestChartRowsCarryHoverReadout(t *testing.T) {
 		if row.Kind != webui.KindChart {
 			continue
 		}
-		if !strings.Contains(row.Hover, `"k":"line"`) && !strings.Contains(row.Hover, `"k":"heat"`) {
-			t.Errorf("chart %q has no hover readout: %q", row.Label, row.Hover)
+		if !strings.Contains(row.Hover, `"k":"line"`) && !strings.Contains(row.Hover, `"k":"bar"`) &&
+			!strings.Contains(row.Hover, `"k":"heat"`) {
+			t.Errorf("chart %q has no supported hover readout", row.Label)
 			continue
 		}
 		found = true

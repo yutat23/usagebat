@@ -27,7 +27,7 @@ type Chart struct {
 
 // Hover is the data the settings page uses to name the point under the cursor.
 type Hover struct {
-	// Kind is "line" for a time series and "heat" for the weekday grid.
+	// Kind is "line" for a time series, "bar" for token usage, or "heat".
 	Kind string `json:"k"`
 	// Plot is the data rectangle in viewBox units: x, y, width, height.
 	Plot [4]float64 `json:"p"`
@@ -242,6 +242,7 @@ func RemainingChart(points []history.Point, o ChartOptions) Chart {
 	// band reads the same here as it does on the battery.
 	var run []point
 	var runInk rgba
+	c.initTimeHover("line", area, len(points))
 	flush := func() {
 		c.polyline(run, runInk)
 		if len(run) > 0 {
@@ -253,6 +254,7 @@ func RemainingChart(points []history.Point, o ChartOptions) Chart {
 			x: area.x + p.At.Sub(first).Seconds()/span*area.w,
 			y: area.y + (100-clampPercent(p.Value))/100*area.h,
 		}
+		c.addTimeHover(p, at.x, at.y)
 		ink := o.Palette.remainingInk(p.Value)
 		switch {
 		case i == 0:
@@ -266,9 +268,6 @@ func RemainingChart(points []history.Point, o ChartOptions) Chart {
 	}
 	c.polyline(run, runInk)
 
-	c.hover = lineHover(points, area, first, last, o.location(), func(v float64) float64 {
-		return area.y + (100-clampPercent(v))/100*area.h
-	}, o.FormatHover)
 	drawTimeAxis(c, area, first, last, label, o.location())
 	return c.done()
 }
@@ -309,21 +308,21 @@ func UsageChart(points []history.Point, o ChartOptions) Chart {
 
 	// Only the top of the scale is labelled: the interesting comparison is
 	// between columns, not against an absolute number.
-	c.text(area.x-6, area.y+chartFontSize, formatCount(peak), "end", label)
+	c.text(area.x-6, area.y+chartFontSize, FormatCount(peak), "end", label)
 
 	slot := area.w / float64(len(points))
 	width := math.Max(slot*0.7, 1)
+	c.initTimeHover("bar", area, len(points))
 	for i, p := range points {
-		height := p.Value / peak * area.h
+		height := math.Max(0, p.Value/peak*area.h)
+		x := area.x + (float64(i)+0.5)*slot
+		y := area.y + area.h - height
+		c.addTimeHover(p, x, y)
 		if height <= 0 {
 			continue
 		}
-		x := area.x + float64(i)*slot + (slot-width)/2
-		c.rect(x, area.y+area.h-height, width, height, o.Palette.Codex, math.Min(1.5, width/2))
+		c.rect(x-width/2, y, width, height, o.Palette.Codex, math.Min(1.5, width/2))
 	}
-	c.hover = lineHover(points, area, points[0].At, points[len(points)-1].At, o.location(), func(v float64) float64 {
-		return area.y + area.h - v/peak*area.h
-	}, o.FormatHover)
 	drawTimeAxis(c, area, points[0].At, points[len(points)-1].At, label, o.location())
 	return c.done()
 }
@@ -377,7 +376,19 @@ func drawHeatLegend(c *builder, x, y, peak float64, o ChartOptions, grid, ink rg
 	}
 	c.text(x, y+swatch+chartFontSize, "0%", "start", ink)
 	c.text(x+float64(heatLegendStops)*(swatch+gap)-gap, y+swatch+chartFontSize,
-		fmt.Sprintf("%.0f%%", peak), "end", ink)
+		FormatHeatPercent(peak), "end", ink)
+}
+
+// FormatHeatPercent keeps small, positive heatmap values distinct from zero.
+func FormatHeatPercent(value float64) string {
+	switch {
+	case value > 0 && value < 0.1:
+		return "<0.1%"
+	case value > 0 && value < 1:
+		return fmt.Sprintf("%.1f%%", value)
+	default:
+		return fmt.Sprintf("%.0f%%", value)
+	}
 }
 
 // heatInk ramps an empty cell towards the accent colour. An hour with no
@@ -397,39 +408,23 @@ func drawTimeAxis(c *builder, area plot, from, to time.Time, label rgba, loc *ti
 	c.text(area.x+area.w, y, to.In(loc).Format("1/2 15:04"), "end", label)
 }
 
-// lineHover keeps one sample per viewBox pixel. A week of five-minute history
-// is thousands of points, and the picture is only a few hundred units across,
-// so a node per sample would dwarf the polyline it is describing.
-func lineHover(points []history.Point, area plot, first, last time.Time, loc *time.Location, yOf func(float64) float64, format func(time.Time, float64) string) Hover {
-	if format == nil || len(points) == 0 {
-		return Hover{}
-	}
-	span := last.Sub(first).Seconds()
-	if span <= 0 {
-		return Hover{}
-	}
-	type sample struct {
-		at          time.Time
-		value, x, y float64
-	}
-	best := map[int]sample{}
-	keys := make([]int, 0, int(area.w)+1)
-	for _, p := range points {
-		x := area.x + p.At.Sub(first).Seconds()/span*area.w
-		key := int(math.Round(x))
-		if _, ok := best[key]; !ok {
-			keys = append(keys, key)
+func (c *builder) initTimeHover(kind string, area plot, count int) {
+	if c.o.FormatHover != nil {
+		c.hover = Hover{
+			Kind: kind,
+			Plot: [4]float64{area.x, area.y, area.w, area.h},
+			Pts:  make([]HoverPoint, 0, count),
 		}
-		best[key] = sample{at: p.At, value: p.Value, x: x, y: yOf(p.Value)}
 	}
-	out := Hover{Kind: "line", Plot: [4]float64{hoverCoord(area.x), hoverCoord(area.y), hoverCoord(area.w), hoverCoord(area.h)}}
-	for _, key := range keys {
-		s := best[key]
-		out.Pts = append(out.Pts, HoverPoint{
-			X: hoverCoord(s.x), Y: hoverCoord(s.y), Label: format(s.at.In(loc), s.value),
+}
+
+func (c *builder) addTimeHover(sample history.Point, x, y float64) {
+	if c.o.FormatHover != nil {
+		c.hover.Pts = append(c.hover.Pts, HoverPoint{
+			X: hoverCoord(x), Y: hoverCoord(y),
+			Label: c.o.FormatHover(sample.At.In(c.o.location()), sample.Value),
 		})
 	}
-	return out
 }
 
 func heatHover(heat history.Heatmap, gutter, cell, gap float64, format func(weekday, hour int, value float64) string) Hover {
@@ -455,7 +450,7 @@ func heatHover(heat history.Heatmap, gutter, cell, gap float64, format func(week
 	return out
 }
 
-func hoverCoord(v float64) float64 { return math.Round(v*10) / 10 }
+func hoverCoord(v float64) float64 { return math.Round(v*100) / 100 }
 
 func clampPercent(v float64) float64 {
 	if v < 0 {
@@ -473,12 +468,8 @@ func num(v float64) string {
 	return strings.TrimSuffix(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
 }
 
-// FormatCount abbreviates a token count to something that fits an axis or a
-// hover readout.
-func FormatCount(v float64) string { return formatCount(v) }
-
-// formatCount abbreviates a token count to something that fits an axis.
-func formatCount(v float64) string {
+// FormatCount abbreviates a token count for a chart axis or hover readout.
+func FormatCount(v float64) string {
 	switch {
 	case v >= 1e9:
 		return fmt.Sprintf("%.0fG", v/1e9)

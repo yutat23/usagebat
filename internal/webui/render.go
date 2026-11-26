@@ -5,6 +5,8 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+
+	"github.com/yutat23/usagebat/internal/render"
 )
 
 //go:embed page.html
@@ -17,6 +19,13 @@ var appJS string
 // template, not something a user can cause, so it panics at startup rather
 // than failing the first time somebody opens the settings.
 var pageTemplate = template.Must(template.New("page").Parse(pageHTML))
+
+// Mascot returns renderer-owned artwork in both browser themes.
+func Mascot(label string) template.HTML {
+	light := render.Mascot(label, false).SVG
+	dark := render.Mascot(label, true).SVG
+	return template.HTML(`<span class="only-light">` + light + `</span><span class="only-dark">` + dark + `</span>`)
+}
 
 func (s *Server) renderPage(w http.ResponseWriter) {
 	page := Page{}
