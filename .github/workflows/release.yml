@@ -1,40 +1,52 @@
 name: Release
-run-name: Release ${{ github.ref_name }}
+run-name: Release ${{ inputs.tag || github.ref_name }}
 
 on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to publish
+        required: true
+        type: string
+
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.tag || github.ref_name }}
 
 jobs:
   build:
     runs-on: macos-15
     timeout-minutes: 20
     steps:
+      - name: Validate release tag
+        shell: bash
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Expected a release tag in the form vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
       - uses: actions/checkout@v7
         with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           persist-credentials: false
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
       - name: Test and package all platforms
         shell: bash
-        run: |
-          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Expected a release tag in the form vMAJOR.MINOR.PATCH" >&2
-            exit 1
-          fi
-          ./scripts/build-release.sh "${GITHUB_REF_NAME#v}"
+        run: ./scripts/build-release.sh "${RELEASE_TAG#v}"
       - uses: actions/upload-artifact@v7
         with:
           name: release-assets
-          path: dist/${{ github.ref_name }}/*
+          path: dist/${{ env.RELEASE_TAG }}/*
           if-no-files-found: error
 
   publish:
@@ -46,6 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
           persist-credentials: false
       - uses: actions/download-artifact@v7
         with:
@@ -55,7 +68,7 @@ jobs:
         working-directory: dist
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           test -s "usagebat_${version}_macOS_universal.zip"
           test -s "usagebat_${version}_windows_amd64.zip"
           test -s "usagebat_${version}_windows_arm64.zip"
@@ -65,7 +78,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           notes="$RUNNER_TEMP/release-notes.md"
           awk -v version="$version" '
             /^## / {
@@ -79,7 +92,7 @@ jobs:
           if grep -q '[^[:space:]]' "$notes"; then
             options+=(--notes-file "$notes")
           fi
-          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+          gh release create "$RELEASE_TAG" --verify-tag --title "$RELEASE_TAG" \
             "${options[@]}" \
             "dist/usagebat_${version}_macOS_universal.zip" \
             "dist/usagebat_${version}_windows_amd64.zip" \
